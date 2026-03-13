@@ -1,0 +1,5 @@
+{
+  "name": "PerDB",
+  "description": "The missing cloud backend for Perchance generators. Sync variables, create leaderboards, and store persistent world states easily.",
+  "requestFramePermissions": []
+}
