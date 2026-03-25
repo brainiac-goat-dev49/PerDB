@@ -54,8 +54,6 @@ export const Docs: React.FC = () => {
   const CLIENT_SDK_CODE = `/**
  * PerDB SDK (v1.0)
  * Copy and paste this into your Perchance HTML Panel
- * 
- * Or import via CDN (Coming Soon)
  */
 
 class PerDB {
@@ -127,6 +125,63 @@ class PerDB {
     } catch (err) {
       console.error("PerDB Read Error:", err);
       return [];
+    }
+  }
+
+  /**
+   * Update a document in a collection
+   * @param {string} collection - The collection name
+   * @param {string} id - The document ID to update
+   * @param {object} data - The new data to merge
+   */
+  async update(collection, id, data) {
+    try {
+      const headers = {
+        "Content-Type": "application/json",
+        "x-api-key": this.apiKey
+      };
+      
+      if (this.auth) {
+        headers["x-perdb-auth"] = typeof this.auth === 'object' 
+          ? JSON.stringify(this.auth) 
+          : this.auth;
+      }
+
+      const res = await fetch(\`\${this.endpoint}?collection=\${collection}&id=\${id}\`, {
+        method: "PUT",
+        headers: headers,
+        body: JSON.stringify(data)
+      });
+      return await res.json();
+    } catch (err) {
+      console.error("PerDB Update Error:", err);
+      return { error: err.message };
+    }
+  }
+
+  /**
+   * Delete a document from a collection
+   * @param {string} collection - The collection name
+   * @param {string} id - The document ID to delete
+   */
+  async delete(collection, id) {
+    try {
+      const headers = { "x-api-key": this.apiKey };
+      
+      if (this.auth) {
+        headers["x-perdb-auth"] = typeof this.auth === 'object' 
+          ? JSON.stringify(this.auth) 
+          : this.auth;
+      }
+
+      const res = await fetch(\`\${this.endpoint}?collection=\${collection}&id=\${id}\`, {
+        method: "DELETE",
+        headers: headers
+      });
+      return await res.json();
+    } catch (err) {
+      console.error("PerDB Delete Error:", err);
+      return { error: err.message };
     }
   }
 }

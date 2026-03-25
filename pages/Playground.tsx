@@ -60,7 +60,9 @@ export const Playground: React.FC = () => {
       const executionContext = async () => {
         const db = {
           save: (key: string, col: string, data: any) => FirebaseService.runtimeAdd(key, col, data),
-          fetch: (key: string, col: string) => FirebaseService.runtimeGet(key, col)
+          fetch: (key: string, col: string) => FirebaseService.runtimeGet(key, col),
+          update: (key: string, col: string, id: string, data: any) => FirebaseService.runtimeUpdate(key, col, id, data),
+          delete: (key: string, col: string, id: string) => FirebaseService.runtimeDelete(key, col, id)
         };
         const log = (msg: string, type: any) => addLog(msg, type);
 
