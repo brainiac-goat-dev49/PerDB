@@ -207,6 +207,7 @@ class PerDB {
                 <NavLink target="configuration" label="Configuration" />
                 <NavLink target="writing" label="Writing Data" />
                 <NavLink target="reading" label="Reading Data" />
+                <NavLink target="usecases" label="Common Use Cases" />
                 <NavLink target="security" label="Security Rules" />
               </nav>
 
@@ -403,6 +404,47 @@ scores.forEach(s => {
 
             <div className="w-full h-px bg-slate-800" />
 
+            <section id="usecases">
+               <div className="flex items-center space-x-3 mb-6">
+                  <Database className="w-6 h-6 text-brand-400" />
+                  <h2 className="text-2xl font-bold text-white">Common Use Cases</h2>
+               </div>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Card className="bg-slate-900/50 border-slate-800">
+                    <h3 className="text-lg font-semibold text-white mb-2">Global Leaderboards</h3>
+                    <p className="text-sm text-slate-400 mb-4">Store player scores and fetch them to display a top-10 list.</p>
+                    <pre className="bg-slate-950 p-3 rounded text-xs text-brand-300 overflow-x-auto">
+{`// Save score
+await db.add("leaderboard", { 
+  user: "Player1", 
+  score: 500 
+});
+
+// Fetch top 10
+const top = await db.get("leaderboard", 10);`}
+                    </pre>
+                  </Card>
+
+                  <Card className="bg-slate-900/50 border-slate-800">
+                    <h3 className="text-lg font-semibold text-white mb-2">Persistent World State</h3>
+                    <p className="text-sm text-slate-400 mb-4">Save the state of a shared world that all users can see and modify.</p>
+                    <pre className="bg-slate-950 p-3 rounded text-xs text-brand-300 overflow-x-auto">
+{`// Update world time
+await db.add("world", { 
+  time: "Day", 
+  weather: "Sunny" 
+});
+
+// Get latest state
+const state = await db.get("world", 1);`}
+                    </pre>
+                  </Card>
+               </div>
+            </section>
+
+            <div className="w-full h-px bg-slate-800" />
+
             <section id="security">
                <div className="flex items-center justify-between mb-4">
                  <div className="flex items-center space-x-3">
@@ -412,7 +454,7 @@ scores.forEach(s => {
                  <Button 
                    size="sm" 
                    variant="outline" 
-                   onClick={() => copyToClipboard('{\n  "scores": {\n    ".read": "true",\n    ".write": "auth != null"\n  }\n}', 'security')}
+                   onClick={() => copyToClipboard('{\n  "scores": {\n    ".read": "true",\n    ".write": "newData.score > 0"\n  }\n}', 'security')}
                    icon={copiedSection === 'security' ? Check : Copy}
                  >
                    {copiedSection === 'security' ? 'Copied' : 'Copy Code'}
@@ -421,17 +463,63 @@ scores.forEach(s => {
                <p className="text-slate-400 mb-6">
                  Protect your data by defining rules in the Dashboard. Rules are JSON objects where keys are collection names, and values define <code>.read</code> and <code>.write</code> permissions.
                </p>
-               <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
+               
+               <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl mb-8">
                  <div className="bg-[#0f172a] p-4 overflow-x-auto">
                    <pre className="font-mono text-sm leading-relaxed text-slate-300">
                      {`{
   "scores": {
     ".read": "true",
-    ".write": "auth != null"
+    ".write": "newData.score > 0"
+  },
+  "private_data": {
+    ".read": "auth.id == 'admin'",
+    ".write": "auth.id == 'admin'"
   }
 }`}
                    </pre>
                  </div>
+               </div>
+
+               <div className="space-y-6">
+                  <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+                      <Lock className="w-5 h-5 mr-2 text-brand-400" /> Rule Context Variables
+                    </h3>
+                    <ul className="space-y-4 text-sm text-slate-400">
+                      <li className="flex gap-3">
+                        <code className="text-brand-300 shrink-0">auth</code>
+                        <span>The authentication context passed via <code>setAuth()</code>. Usually an object with an <code>id</code>.</span>
+                      </li>
+                      <li className="flex gap-3">
+                        <code className="text-brand-300 shrink-0">newData</code>
+                        <span>The data being written (available in <code>.write</code>).</span>
+                      </li>
+                      <li className="flex gap-3">
+                        <code className="text-brand-300 shrink-0">data</code>
+                        <span>The existing data in the database (available in <code>.write</code> for updates/deletes).</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-emerald-900/10 border border-emerald-500/20 rounded-lg">
+                      <h4 className="text-emerald-400 font-bold text-xs uppercase mb-2">Public Read</h4>
+                      <code className="text-xs text-slate-300">".read": "true"</code>
+                    </div>
+                    <div className="p-4 bg-amber-900/10 border border-amber-500/20 rounded-lg">
+                      <h4 className="text-amber-400 font-bold text-xs uppercase mb-2">Authenticated Write</h4>
+                      <code className="text-xs text-slate-300">".write": "auth != null"</code>
+                    </div>
+                    <div className="p-4 bg-blue-900/10 border border-blue-500/20 rounded-lg">
+                      <h4 className="text-blue-400 font-bold text-xs uppercase mb-2">Data Validation</h4>
+                      <code className="text-xs text-slate-300">".write": "newData.score &gt; 0"</code>
+                    </div>
+                    <div className="p-4 bg-purple-900/10 border border-purple-500/20 rounded-lg">
+                      <h4 className="text-purple-400 font-bold text-xs uppercase mb-2">Owner Only</h4>
+                      <code className="text-xs text-slate-300">".write": "auth.id == data.ownerId"</code>
+                    </div>
+                  </div>
                </div>
             </section>
           </div>

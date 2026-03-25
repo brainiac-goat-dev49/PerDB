@@ -43,9 +43,13 @@ const mapDocToProject = async (docSnap: any): Promise<Project> => {
     secretKey: data.secretKey,
     permissions: data.permissions,
     rules: data.rules || `{
-  "users": {
+  "global": {
     ".read": "true",
-    ".write": "auth.uid == resource.id"
+    ".write": "true"
+  },
+  "scores": {
+    ".read": "true",
+    ".write": "newData.score > 0"
   }
 }`,
     collections,
@@ -72,9 +76,13 @@ export const FirebaseService = {
         allowedOrigins: ['perchance.org']
       },
       rules: `{
-  "users": {
+  "global": {
     ".read": "true",
-    ".write": "auth.uid == resource.id"
+    ".write": "true"
+  },
+  "scores": {
+    ".read": "true",
+    ".write": "newData.score > 0"
   }
 }`,
       collectionList: [], // Metadata to track subcollections

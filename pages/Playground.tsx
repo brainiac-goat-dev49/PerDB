@@ -24,11 +24,21 @@ log("Saving hero...", "info");
 const result = await db.save(apiKey, "players", hero);
 log("Saved! ID: " + result.id, "success");
 
-// 4. Fetch all players
+// 4. Update the hero
+log("Updating hero gold...", "info");
+await db.update(apiKey, "players", result.id, { gold: 75 });
+log("Updated!", "success");
+
+// 5. Fetch all players
 log("Fetching leaderboard...", "info");
 const players = await db.fetch(apiKey, "players");
 log("Found " + players.length + " players.", "info");
 console.log(players); // Check console for full object
+
+// 6. Delete the hero (uncomment to test)
+// log("Deleting hero...", "info");
+// await db.delete(apiKey, "players", result.id);
+// log("Deleted!", "success");
 `;
 
 export const Playground: React.FC = () => {

@@ -27,6 +27,8 @@ export const generateCodeSnippet = async (prompt: string): Promise<string> => {
       1. Initialization: const db = new PerDB("API_KEY");
       2. Add Data: await db.add("collection_name", { key: "value" });
       3. Get Data: await db.get("collection_name", limit_number); (Returns array)
+      4. Update Data: await db.update("collection_name", "doc_id", { key: "new_value" });
+      5. Delete Data: await db.delete("collection_name", "doc_id");
       
       CRITICAL: Every generated code snippet MUST include the full initialization step:
       const db = new PerDB("YOUR_API_KEY");
@@ -34,6 +36,8 @@ export const generateCodeSnippet = async (prompt: string): Promise<string> => {
       Generate a VALID JavaScript code snippet for a Perchance HTML module based on the user's request.
       Do not include markdown backticks. Just the raw code. Keep it concise.
       Add comments explaining what it does.
+      If the user asks for a leaderboard, show how to use db.get and then sort/display it.
+      If the user asks for a world state, show how to save/fetch a single document or collection.
     `;
 
     const response = await ai.models.generateContent({
