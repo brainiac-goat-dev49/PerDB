@@ -48,8 +48,8 @@ export const Docs: React.FC = () => {
     </button>
   );
 
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://perdb.vercel.app';
-  const apiEndpoint = `${currentOrigin}/api`;
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const apiEndpoint = currentOrigin ? `${currentOrigin}/api` : '/api';
 
   const CLIENT_SDK_CODE = `/**
  * PerDB SDK (v1.0)

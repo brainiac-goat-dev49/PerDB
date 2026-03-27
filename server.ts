@@ -9,46 +9,68 @@ import { createServer as createViteServer } from 'vite';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Firebase Admin Singleton
+let db: admin.firestore.Firestore | null = null;
+
+function getDb() {
+  if (db) return db;
+
+  if (admin.apps.length === 0) {
+    try {
+      const saEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
+      if (!saEnv) {
+        console.warn("FIREBASE_SERVICE_ACCOUNT is missing. API will be limited.");
+        return null;
+      }
+      const serviceAccount = JSON.parse(saEnv);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log("Firebase Admin initialized");
+      db = admin.firestore();
+    } catch (error) {
+      console.error("Firebase Admin Init Error:", error);
+      return null;
+    }
+  } else {
+    db = admin.firestore();
+  }
+  return db;
+}
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
-
-  // Initialize Firebase Admin
-  if (!admin.apps.length) {
-    try {
-      const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT 
-        ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) 
-        : null;
-
-      if (serviceAccount) {
-        admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount)
-        });
-      } else {
-        console.warn("No FIREBASE_SERVICE_ACCOUNT env var found. API will likely fail.");
-        // Fallback to default if running in an environment with implicit credentials
-        admin.initializeApp();
-      }
-    } catch (e) {
-      console.error("Firebase Admin Init Error:", e);
-    }
-  }
-
-  const db = admin.firestore();
+  const PORT = process.env.PORT || 3000;
 
   // Middleware
-  app.use(cors({ origin: true })); // Allow all origins for the API, including perchance.org
+  app.use(cors({ origin: true }));
   app.use(bodyParser.json());
 
   // --- PerDB API v1 ---
   app.all('/api', async (req, res) => {
+    // Debug endpoint
+    if (req.query.debug === 'true') {
+      return res.json({
+        status: 'online',
+        hasServiceAccount: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+        adminApps: admin.apps.length
+      });
+    }
+
     try {
       // 0. Health Check / Root Response
       if (!req.query.key && !req.headers['x-api-key']) {
         return res.status(200).json({ 
           status: 'online', 
           message: 'PerDB API is active. Please provide an API Key to interact with data.',
-          docs: 'https://perdb.vercel.app/docs'
+          docs: '/docs'
+        });
+      }
+
+      const firestore = getDb();
+      if (!firestore) {
+        return res.status(500).json({ 
+          error: 'Firebase Admin not initialized. Check your environment variables (FIREBASE_SERVICE_ACCOUNT).' 
         });
       }
 
@@ -60,7 +82,7 @@ async function startServer() {
       }
 
       // 2. Lookup Project by API Key
-      const projectsSnap = await db.collection('projects')
+      const projectsSnap = await firestore.collection('projects')
         .where('apiKey', '==', apiKey)
         .limit(1)
         .get();
@@ -76,11 +98,11 @@ async function startServer() {
         ? JSON.parse(projectData.rules) 
         : (projectData.rules || {});
 
-      const collectionName = req.query.collection || 'default';
+      const collectionName = req.query.collection as string || 'default';
       const docPath = `projects/${projectId}/collections/${collectionName}/docs`;
 
       // Helper to evaluate rules
-      const evaluateRule = (ruleStr, context) => {
+      const evaluateRule = (ruleStr: any, context: any) => {
         if (ruleStr === 'true' || ruleStr === true) return true;
         if (ruleStr === 'false' || ruleStr === false) return false;
         if (!ruleStr) return false;
@@ -96,7 +118,7 @@ async function startServer() {
 
       // Parse Auth Context
       let authContext = null;
-      const authHeader = req.headers['x-perdb-auth'];
+      const authHeader = req.headers['x-perdb-auth'] as string;
       if (authHeader) {
         try {
           authContext = JSON.parse(authHeader);
@@ -115,7 +137,7 @@ async function startServer() {
           return res.status(403).json({ error: 'Permission Denied' });
         }
         
-        const docRef = await db.collection(docPath).add({
+        const docRef = await firestore.collection(docPath).add({
           ...payload,
           _created: admin.firestore.FieldValue.serverTimestamp()
         });
@@ -140,7 +162,7 @@ async function startServer() {
         }
 
         const limit = parseInt(req.query.limit as string) || 50;
-        const snapshot = await db.collection(docPath)
+        const snapshot = await firestore.collection(docPath)
           .orderBy('_created', 'desc')
           .limit(limit)
           .get();
@@ -163,7 +185,7 @@ async function startServer() {
         const writeRule = projectRules[collectionName]?.['.write'];
         
         // Fetch current data for rule evaluation
-        const docRef = db.collection(docPath).doc(docId);
+        const docRef = firestore.collection(docPath).doc(docId);
         const docSnap = await docRef.get();
         if (!docSnap.exists) return res.status(404).json({ error: 'Document not found' });
 
@@ -191,7 +213,7 @@ async function startServer() {
         if (!docId) return res.status(400).json({ error: 'Missing Document ID' });
 
         const writeRule = projectRules[collectionName]?.['.write'];
-        const docRef = db.collection(docPath).doc(docId);
+        const docRef = firestore.collection(docPath).doc(docId);
         const docSnap = await docRef.get();
         if (!docSnap.exists) return res.status(404).json({ error: 'Document not found' });
 

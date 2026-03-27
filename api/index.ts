@@ -67,11 +67,11 @@ app.all('*', async (req, res) => {
 
   // 0. Health Check (no DB needed yet)
   if (!req.query.key && !req.headers['x-api-key']) {
-    return res.status(200).json({ 
-      status: 'online', 
-      message: 'PerDB API is active. Please provide an API Key to interact with data.',
-      docs: 'https://perdb.vercel.app/docs'
-    });
+      return res.status(200).json({ 
+        status: 'online', 
+        message: 'PerDB API is active. Please provide an API Key to interact with data.',
+        docs: '/docs'
+      });
   }
 
   try {

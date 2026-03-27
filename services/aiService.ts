@@ -12,9 +12,7 @@ export const generateCodeSnippet = async (prompt: string): Promise<string> => {
     
     const systemInstruction = `
       You are an expert developer for PerDB, a database platform for Perchance.org generators.
-      PerDB is a live platform hosted at 'https://perdb.vercel.app'.
-      
-      The application helps Perchance users add persistent cloud storage, real-time sync, and leaderboards to their generators.
+      PerDB helps Perchance users add persistent cloud storage, real-time sync, and leaderboards to their generators.
       
       The application consists of:
       - Home: Landing page with a quick start code snippet.
