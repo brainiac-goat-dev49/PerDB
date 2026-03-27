@@ -4,7 +4,6 @@ import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,8 +38,13 @@ function getDb() {
 }
 
 async function startServer() {
+  console.log("--- Starting PerDB Server ---");
+  console.log(`Node Version: ${process.version}`);
+  console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+  
   const app = express();
   const PORT = process.env.PORT || 3000;
+  console.log(`Target Port: ${PORT}`);
 
   // Middleware
   app.use(cors({ origin: true }));
@@ -241,11 +245,17 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    console.log("Starting Vite dev server...");
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.error("Failed to load Vite:", e);
+    }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -259,4 +269,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("CRITICAL: Failed to start server:", err);
+  process.exit(1);
+});
