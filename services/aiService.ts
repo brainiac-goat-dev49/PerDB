@@ -2,12 +2,13 @@
 import { GoogleGenAI } from "@google/genai";
 
 export const generateCodeSnippet = async (prompt: string): Promise<string> => {
-  if (!process.env.API_KEY) {
+  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
     return "// API Key not configured. Using fallback example.\n// await db.add('items', { name: 'Sword', power: 10 });";
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     
     const systemInstruction = `
       You are an expert developer for PerDB, a database platform for Perchance.org generators.

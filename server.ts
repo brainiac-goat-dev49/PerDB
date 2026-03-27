@@ -43,6 +43,15 @@ async function startServer() {
   // --- PerDB API v1 ---
   app.all('/api', async (req, res) => {
     try {
+      // 0. Health Check / Root Response
+      if (!req.query.key && !req.headers['x-api-key']) {
+        return res.status(200).json({ 
+          status: 'online', 
+          message: 'PerDB API is active. Please provide an API Key to interact with data.',
+          docs: 'https://perdb.vercel.app/docs'
+        });
+      }
+
       // 1. Validate API Key
       const apiKey = req.headers['x-api-key'] || req.query.key;
       
