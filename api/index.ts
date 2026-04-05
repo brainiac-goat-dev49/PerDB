@@ -53,7 +53,7 @@ const evaluateRule = (ruleStr: any, context: any) => {
 };
 
 // API Handler
-app.all('*', async (req, res) => {
+app.all('*all', async (req, res) => {
   // Debug endpoint
   if (req.path === '/api/debug' || req.path === '/debug') {
     return res.json({
