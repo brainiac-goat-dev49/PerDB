@@ -302,7 +302,7 @@ async function startServer() {
     app.use(express.static(distPath));
     
     // Express 5 requires a named parameter for wildcards
-    app.get('/:path*', (req, res) => {
+    app.get('*all', (req, res) => {
       res.sendFile(indexPath, (err) => {
         if (err) {
           console.error(`Failed to send index.html from ${indexPath}:`, err);
