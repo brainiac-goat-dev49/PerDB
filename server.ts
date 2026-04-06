@@ -295,12 +295,18 @@ async function startServer() {
     }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
+    const indexPath = path.join(distPath, 'index.html');
+    
+    console.log(`Production mode: Serving static files from ${distPath}`);
+    
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'), (err) => {
+    
+    // Express 5 requires (.*) for a catch-all wildcard
+    app.get('(.*)', (req, res) => {
+      res.sendFile(indexPath, (err) => {
         if (err) {
-          console.error("Failed to send index.html:", err);
-          res.status(500).send("Internal Server Error: Missing build artifacts. Please ensure 'npm run build' was successful.");
+          console.error(`Failed to send index.html from ${indexPath}:`, err);
+          res.status(500).send("Internal Server Error: Missing build artifacts. Please ensure 'npm run build' was successful and the 'dist' folder exists.");
         }
       });
     });
