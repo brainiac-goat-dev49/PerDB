@@ -93,6 +93,34 @@ app.all('*all', async (req, res) => {
     const projectDoc = projectsSnap.docs[0];
     const projectId = projectDoc.id;
     const projectData = projectDoc.data();
+
+    // Domain Check
+    const referer = (req.headers.referer || req.headers.referrer) as string;
+    const origin = req.headers.origin as string;
+    const isPerchance = (referer && referer.includes('perchance.org')) || 
+                       (origin && origin.includes('perchance.org'));
+    
+    const isLocal = process.env.NODE_ENV !== 'production';
+    const isOurDomain = referer && (referer.includes('koyeb.app') || referer.includes('run.app') || referer.includes('ai.studio'));
+
+    if (!isPerchance && !isLocal && !isOurDomain) {
+       return res.status(403).json({ 
+         error: 'Domain Restricted', 
+         message: 'PerDB is currently in beta and only supports projects hosted on perchance.org' 
+       });
+    }
+
+    // Increment Analytics (Atomic)
+    if (req.method === 'GET') {
+       await projectDoc.ref.update({
+         totalReads: admin.firestore.FieldValue.increment(1)
+       });
+    } else if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+       await projectDoc.ref.update({
+         totalWrites: admin.firestore.FieldValue.increment(1)
+       });
+    }
+
     const projectRules = typeof projectData.rules === 'string' 
       ? JSON.parse(projectData.rules) 
       : (projectData.rules || {});

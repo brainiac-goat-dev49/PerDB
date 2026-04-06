@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "A PerDB project/database",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "description": "The UID of the user who owns this project" },
+        "name": { "type": "string", "description": "The name of the project" },
+        "apiKey": { "type": "string", "description": "The public API key for the project" },
+        "secretKey": { "type": "string", "description": "The secret API key for the project" },
+        "rules": { "type": "string", "description": "The security rules for the project" },
+        "collectionList": { "type": "array", "items": { "type": "string" }, "description": "A list of collection names in this project" },
+        "totalReads": { "type": "number", "description": "The total number of read operations" },
+        "totalWrites": { "type": "number", "description": "The total number of write operations" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "The creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "The last update timestamp" }
+      },
+      "required": ["ownerId", "name", "apiKey", "secretKey"]
+    },
+    "DBEntry": {
+      "title": "DBEntry",
+      "description": "A single entry in a PerDB collection",
+      "type": "object",
+      "properties": {
+        "_created": { "type": "string", "format": "date-time", "description": "The creation timestamp" }
+      },
+      "required": ["_created"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "The main project document"
+    },
+    "/projects/{projectId}/collections/{collectionName}/docs/{docId}": {
+      "schema": "DBEntry",
+      "description": "The actual data entries in a collection"
+    }
+  }
+}

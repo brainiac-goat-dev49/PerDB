@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // helper to check ownership
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // helper to check if user owns the project
+    function ownsProject(projectId) {
+      return isOwner(get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId);
+    }
+
+    match /projects/{projectId} {
+      // 1. Allow creation if you are who you say you are
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      
+      // 2. Allow reading/updating/deleting only if you own the project
+      allow read, update, delete: if isOwner(resource.data.ownerId);
+      
+      // 3. Nested Collections (The actual data)
+      match /collections/{collectionName}/docs/{docId} {
+        // We allow read/write if the user owns the parent project
+        allow read, write: if ownsProject(projectId);
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@ import { Docs } from './pages/Docs';
 import { Playground } from './pages/Playground';
 import { Auth } from './pages/Auth';
 import { About } from './pages/About';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 const AppContent: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -159,9 +160,11 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => (
-  <BrowserRouter>
-    <AppContent />
-  </BrowserRouter>
+  <ErrorBoundary>
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  </ErrorBoundary>
 );
 
 export default App;

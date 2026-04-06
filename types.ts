@@ -25,6 +25,8 @@ export interface Project {
   permissions: ProjectPermissions;
   rules?: string; // JSON string of security rules
   collections: Collection[];
+  totalReads?: number;
+  totalWrites?: number;
   createdAt: string;
   updatedAt: string;
 }
