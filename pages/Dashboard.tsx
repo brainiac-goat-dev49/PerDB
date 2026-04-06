@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Database, Key, Trash2, RefreshCw, Layers, Table as TableIcon, FileJson, Search, Pencil, Save, X, ChevronLeft, ChevronRight, Shield, Play, CheckCircle, XCircle } from 'lucide-react';
 import { FirebaseService } from '../services/firebaseService';
 import { Project, Collection, DBEntry } from '../types';
-import { Button, Card, Input, Badge, Modal } from '../components/ui';
+import { Button, Card, Input, Badge, Modal, ConfirmationModal, AlertModal } from '../components/ui';
 
 // --- Sub-components for Data Visualization ---
 
@@ -185,6 +185,8 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [alertInfo, setAlertInfo] = useState<{ title: string; message: string } | null>(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   const handleToggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -203,8 +205,11 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
 
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedIds.size} entries?`)) return;
-    
+    setBulkDeleteConfirm(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    setBulkDeleteConfirm(false);
     setIsBulkDeleting(true);
     try {
       const ids: string[] = Array.from(selectedIds);
@@ -214,7 +219,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
       setSelectedIds(new Set());
       onRefresh();
     } catch (e) {
-      alert("Error during bulk delete");
+      setAlertInfo({ title: "Error", message: "Error during bulk delete" });
     } finally {
       setIsBulkDeleting(false);
     }
@@ -235,7 +240,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
       setEditingEntry(null);
       onRefresh();
     } catch (e) {
-      alert("Invalid JSON or Error Saving");
+      setAlertInfo({ title: "Error", message: "Invalid JSON or Error Saving" });
     } finally {
       setIsProcessing(false);
     }
@@ -253,7 +258,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
       setDeletingEntry(null);
       onRefresh();
     } catch (e) {
-      alert("Error deleting entry");
+      setAlertInfo({ title: "Error", message: "Error deleting entry" });
     } finally {
       setIsProcessing(false);
     }
@@ -365,6 +370,23 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
            </div>
         </div>
       </Modal>
+
+      <ConfirmationModal
+        isOpen={bulkDeleteConfirm}
+        onClose={() => setBulkDeleteConfirm(false)}
+        onConfirm={confirmBulkDelete}
+        title="Bulk Delete"
+        message={`Are you sure you want to delete ${selectedIds.size} entries?`}
+        variant="danger"
+        confirmText="Delete All"
+      />
+
+      <AlertModal
+        isOpen={!!alertInfo}
+        onClose={() => setAlertInfo(null)}
+        title={alertInfo?.title || "Notification"}
+        message={alertInfo?.message || ""}
+      />
     </>
   );
 };
@@ -385,6 +407,7 @@ const RulesEditor: React.FC<RulesEditorProps> = ({ project, onUpdate }) => {
   const [testRequestData, setTestRequestData] = useState('{"score": 20}');
   const [testAction, setTestAction] = useState<'read' | 'write'>('write');
   const [result, setResult] = useState<{ allowed: boolean; reason: string } | null>(null);
+  const [alertInfo, setAlertInfo] = useState<{ title: string; message: string } | null>(null);
 
   // Sync internal state if project changes from outside
   useEffect(() => {
@@ -397,7 +420,7 @@ const RulesEditor: React.FC<RulesEditorProps> = ({ project, onUpdate }) => {
       await onUpdate(rules);
     } catch (e) {
       console.error(e);
-      alert("Failed to save rules");
+      setAlertInfo({ title: "Error", message: "Failed to save rules" });
     } finally {
       setIsSaving(false);
     }
@@ -506,6 +529,13 @@ const RulesEditor: React.FC<RulesEditorProps> = ({ project, onUpdate }) => {
             )}
          </div>
       </div>
+
+      <AlertModal
+        isOpen={!!alertInfo}
+        onClose={() => setAlertInfo(null)}
+        title={alertInfo?.title || "Notification"}
+        message={alertInfo?.message || ""}
+      />
     </div>
   );
 };
@@ -520,6 +550,7 @@ export const Dashboard: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<'data' | 'rules'>('data');
   const [deleteConfirmation, setDeleteConfirmation] = useState<string | null>(null);
+  const [alertInfo, setAlertInfo] = useState<{ title: string; message: string } | null>(null);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -572,7 +603,7 @@ export const Dashboard: React.FC = () => {
       await fetchProjects();
     } catch (err) {
       console.error(err);
-      alert("Failed to create project");
+      setAlertInfo({ title: "Error", message: "Failed to create project" });
     } finally {
       setLoading(false);
     }
@@ -587,7 +618,7 @@ export const Dashboard: React.FC = () => {
       await fetchProjects();
     } catch (e) {
       console.error(e);
-      alert("Error deleting project");
+      setAlertInfo({ title: "Error", message: "Error deleting project" });
     } finally {
       setLoading(false);
     }
@@ -798,24 +829,23 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      <Modal 
-        isOpen={!!deleteConfirmation} 
-        onClose={() => setDeleteConfirmation(null)} 
+      <ConfirmationModal
+        isOpen={!!deleteConfirmation}
+        onClose={() => setDeleteConfirmation(null)}
+        onConfirm={handleDeleteProject}
         title="Delete Project"
-      >
-        <div className="space-y-4">
-           <p className="text-slate-300">
-             Are you sure you want to delete this project? 
-             <br />
-             <span className="text-red-400 font-bold">This action cannot be undone.</span>
-           </p>
-           <div className="flex justify-end gap-2 pt-2">
-             <Button variant="secondary" onClick={() => setDeleteConfirmation(null)}>Cancel</Button>
-             <Button variant="danger" icon={Trash2} onClick={handleDeleteProject} isLoading={loading}>Yes, Delete Project</Button>
-           </div>
-        </div>
-      </Modal>
+        message="Are you sure you want to delete this project? This action cannot be undone and all data will be lost."
+        variant="danger"
+        confirmText="Delete Project"
+        isLoading={loading}
+      />
+
+      <AlertModal
+        isOpen={!!alertInfo}
+        onClose={() => setAlertInfo(null)}
+        title={alertInfo?.title || "Notification"}
+        message={alertInfo?.message || ""}
+      />
     </div>
   );
 };
