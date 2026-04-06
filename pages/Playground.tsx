@@ -11,6 +11,8 @@ import { generateCodeSnippet } from '../services/aiService';
 const INITIAL_CODE = `// 1. Initialize DB 
 // (Replace with a key from your Dashboard)
 const apiKey = "pk_live_REPLACE_ME";
+// Optional: Use your Secret Key to bypass rules for admin tasks
+const secretKey = ""; 
 
 // 2. Define some data
 const hero = {
@@ -26,7 +28,7 @@ log("Saved! ID: " + result.id, "success");
 
 // 4. Update the hero
 log("Updating hero gold...", "info");
-await db.update(apiKey, "players", result.id, { gold: 75 });
+await db.update(apiKey, "players", result.id, { gold: 75 }, secretKey);
 log("Updated!", "success");
 
 // 5. Fetch all players
@@ -37,7 +39,7 @@ console.log(players); // Check console for full object
 
 // 6. Delete the hero (uncomment to test)
 // log("Deleting hero...", "info");
-// await db.delete(apiKey, "players", result.id);
+// await db.delete(apiKey, "players", result.id, secretKey);
 // log("Deleted!", "success");
 `;
 
@@ -71,8 +73,8 @@ export const Playground: React.FC = () => {
         const db = {
           save: (key: string, col: string, data: any) => FirebaseService.runtimeAdd(key, col, data),
           fetch: (key: string, col: string) => FirebaseService.runtimeGet(key, col),
-          update: (key: string, col: string, id: string, data: any) => FirebaseService.runtimeUpdate(key, col, id, data),
-          delete: (key: string, col: string, id: string) => FirebaseService.runtimeDelete(key, col, id)
+          update: (key: string, col: string, id: string, data: any, secretKey?: string) => FirebaseService.runtimeUpdate(key, col, id, data, secretKey),
+          delete: (key: string, col: string, id: string, secretKey?: string) => FirebaseService.runtimeDelete(key, col, id, secretKey)
         };
         const log = (msg: string, type: any) => addLog(msg, type);
 

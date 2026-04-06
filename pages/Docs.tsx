@@ -56,8 +56,9 @@ export const Docs: React.FC = () => {
  */
 
 class PerDB {
-  constructor(apiKey) {
+  constructor(apiKey, secretKey = null) {
     this.apiKey = apiKey;
+    this.secretKey = secretKey;
     this.auth = null;
     // The Live PerDB Platform Endpoint
     this.endpoint = "${apiEndpoint}"; 
@@ -82,6 +83,8 @@ class PerDB {
         "Content-Type": "application/json",
         "x-api-key": this.apiKey
       };
+      
+      if (this.secretKey) headers["x-secret-key"] = this.secretKey;
       
       if (this.auth) {
         headers["x-perdb-auth"] = typeof this.auth === 'object' 
@@ -109,6 +112,7 @@ class PerDB {
   async get(collection, limit = 50) {
     try {
       const headers = { "x-api-key": this.apiKey };
+      if (this.secretKey) headers["x-secret-key"] = this.secretKey;
       
       if (this.auth) {
         headers["x-perdb-auth"] = typeof this.auth === 'object' 
@@ -140,6 +144,8 @@ class PerDB {
         "x-api-key": this.apiKey
       };
       
+      if (this.secretKey) headers["x-secret-key"] = this.secretKey;
+      
       if (this.auth) {
         headers["x-perdb-auth"] = typeof this.auth === 'object' 
           ? JSON.stringify(this.auth) 
@@ -166,6 +172,7 @@ class PerDB {
   async delete(collection, id) {
     try {
       const headers = { "x-api-key": this.apiKey };
+      if (this.secretKey) headers["x-secret-key"] = this.secretKey;
       
       if (this.auth) {
         headers["x-perdb-auth"] = typeof this.auth === 'object' 
@@ -320,7 +327,9 @@ class PerDB {
                <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl mb-6">
                  <div className="bg-[#0f172a] p-4 overflow-x-auto">
                    <pre className="font-mono text-sm leading-relaxed text-slate-300">
-                     {`const db = new PerDB("pk_live_YOUR_API_KEY_HERE");`}
+                     {`const db = new PerDB("pk_live_YOUR_API_KEY_HERE");
+// Optional: Use secret key to bypass rules (admin tasks)
+// const db = new PerDB("pk_live_API_KEY", "sk_live_SECRET_KEY");`}
                    </pre>
                  </div>
                </div>

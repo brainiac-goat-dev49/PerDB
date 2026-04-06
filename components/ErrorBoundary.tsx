@@ -59,12 +59,24 @@ export class ErrorBoundary extends React.Component<any, any> {
                 {errorMessage}
               </code>
             </div>
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors duration-200 shadow-md"
-            >
-              Reload Application
-            </button>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors duration-200 shadow-md"
+              >
+                Reload Application
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.clear();
+                  sessionStorage.clear();
+                  window.location.reload();
+                }}
+                className="w-full bg-slate-100 text-slate-600 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 transition-colors duration-200"
+              >
+                Clear Cache & Reset
+              </button>
+            </div>
           </div>
         </div>
       );

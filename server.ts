@@ -80,6 +80,7 @@ async function startServer() {
 
       // 1. Validate API Key
       const apiKey = req.headers['x-api-key'] || req.query.key;
+      const secretKey = req.headers['x-secret-key'];
       
       if (!apiKey) {
         return res.status(401).json({ error: 'Missing API Key' });
@@ -109,6 +110,10 @@ async function startServer() {
       const projectDoc = projectsSnap.docs[0];
       const projectId = projectDoc.id;
       const projectData = projectDoc.data();
+      
+      // Bypass rules if secret key matches
+      const isMasterRequest = secretKey === projectData.secretKey;
+
       const projectRules = typeof projectData.rules === 'string' 
         ? JSON.parse(projectData.rules) 
         : (projectData.rules || {});
@@ -146,9 +151,9 @@ async function startServer() {
       if (req.method === 'POST') {
         const payload = req.body;
         const writeRule = projectRules[collectionName]?.['.write'];
-        const isAllowed = evaluateRule(writeRule, { auth: authContext, newData: payload, data: null });
+        const isAllowed = isMasterRequest || evaluateRule(writeRule, { auth: authContext, newData: payload, data: null });
 
-        if (!isAllowed && writeRule !== undefined) {
+        if (!isAllowed && writeRule !== undefined && !isMasterRequest) {
           return res.status(403).json({ error: 'Permission Denied' });
         }
         
@@ -175,9 +180,9 @@ async function startServer() {
       // --- GET: Read ---
       if (req.method === 'GET') {
         const readRule = projectRules[collectionName]?.['.read'];
-        const isAllowed = evaluateRule(readRule, { auth: authContext, newData: null, data: null });
+        const isAllowed = isMasterRequest || evaluateRule(readRule, { auth: authContext, newData: null, data: null });
 
-        if (!isAllowed && readRule !== undefined) {
+        if (!isAllowed && readRule !== undefined && !isMasterRequest) {
           return res.status(403).json({ error: 'Permission Denied' });
         }
 
@@ -214,13 +219,13 @@ async function startServer() {
         const docSnap = await docRef.get();
         if (!docSnap.exists) return res.status(404).json({ error: 'Document not found' });
 
-        const isAllowed = evaluateRule(writeRule, { 
+        const isAllowed = isMasterRequest || evaluateRule(writeRule, { 
           auth: authContext, 
           newData: payload, 
           data: docSnap.data() 
         });
 
-        if (!isAllowed && writeRule !== undefined) {
+        if (!isAllowed && writeRule !== undefined && !isMasterRequest) {
           return res.status(403).json({ error: 'Permission Denied' });
         }
 
@@ -247,13 +252,13 @@ async function startServer() {
         const docSnap = await docRef.get();
         if (!docSnap.exists) return res.status(404).json({ error: 'Document not found' });
 
-        const isAllowed = evaluateRule(writeRule, { 
+        const isAllowed = isMasterRequest || evaluateRule(writeRule, { 
           auth: authContext, 
           newData: null, 
           data: docSnap.data() 
         });
 
-        if (!isAllowed && writeRule !== undefined) {
+        if (!isAllowed && writeRule !== undefined && !isMasterRequest) {
           return res.status(403).json({ error: 'Permission Denied' });
         }
 
@@ -291,7 +296,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

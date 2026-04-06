@@ -13,12 +13,18 @@ interface CollectionTableProps {
   entries: DBEntry[];
   onEdit: (entry: DBEntry) => void;
   onDelete: (entry: DBEntry) => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onToggleSelectAll: () => void;
 }
 
 const CollectionTable: React.FC<CollectionTableProps> = ({ 
   entries, 
   onEdit, 
-  onDelete 
+  onDelete,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -42,12 +48,22 @@ const CollectionTable: React.FC<CollectionTableProps> = ({
     ...(allKeys.includes('_created') ? ['_created'] : [])
   ];
 
+  const isAllSelected = paginatedEntries.length > 0 && paginatedEntries.every(e => selectedIds.has(e.id));
+
   return (
     <div className="flex flex-col h-full">
       <div className="overflow-x-auto custom-scrollbar pb-2 flex-1">
         <table className="min-w-full divide-y divide-slate-800/50 text-left border-collapse">
           <thead className="bg-slate-900 sticky top-0 z-10">
             <tr>
+              <th className="px-4 py-3 w-10 border-b border-slate-700">
+                <input 
+                  type="checkbox" 
+                  checked={isAllSelected}
+                  onChange={onToggleSelectAll}
+                  className="rounded border-slate-700 bg-slate-800 text-brand-500 focus:ring-brand-500/20"
+                />
+              </th>
               {headers.map(header => (
                 <th key={header} className="px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap border-b border-slate-700 select-none">
                   {header}
@@ -60,7 +76,15 @@ const CollectionTable: React.FC<CollectionTableProps> = ({
           </thead>
           <tbody className="bg-slate-900/20 divide-y divide-slate-800/50">
             {paginatedEntries.map((entry) => (
-              <tr key={entry.id} className="hover:bg-slate-800/50 transition-colors group">
+              <tr key={entry.id} className={`hover:bg-slate-800/50 transition-colors group ${selectedIds.has(entry.id) ? 'bg-brand-500/5' : ''}`}>
+                <td className="px-4 py-2 border-r border-slate-800/30">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedIds.has(entry.id)}
+                    onChange={() => onToggleSelect(entry.id)}
+                    className="rounded border-slate-700 bg-slate-800 text-brand-500 focus:ring-brand-500/20"
+                  />
+                </td>
                 {headers.map(header => {
                   const value = entry[header];
                   let displayValue: React.ReactNode = value;
@@ -144,19 +168,57 @@ const CollectionTable: React.FC<CollectionTableProps> = ({
 interface CollectionViewerProps {
   collection: Collection;
   projectApiKey: string;
+  projectSecretKey?: string;
   onRefresh: () => void;
 }
 
 const CollectionViewer: React.FC<CollectionViewerProps> = ({ 
   collection, 
   projectApiKey,
+  projectSecretKey,
   onRefresh 
 }) => {
   const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
   const [editingEntry, setEditingEntry] = useState<DBEntry | null>(null);
   const [editJson, setEditJson] = useState('');
   const [deletingEntry, setDeletingEntry] = useState<DBEntry | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleToggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.size === collection.entries.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(collection.entries.map(e => e.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} entries?`)) return;
+    
+    setIsBulkDeleting(true);
+    try {
+      const ids: string[] = Array.from(selectedIds);
+      await Promise.all(ids.map((id: string) => 
+        FirebaseService.runtimeDelete(projectApiKey, collection.name, id, projectSecretKey as string | undefined)
+      ));
+      setSelectedIds(new Set());
+      onRefresh();
+    } catch (e) {
+      alert("Error during bulk delete");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   const handleEditClick = (entry: DBEntry) => {
     setEditingEntry(entry);
@@ -169,7 +231,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
     try {
       const parsedData = JSON.parse(editJson);
       const { id, ...dataToUpdate } = parsedData; 
-      await FirebaseService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate);
+      await FirebaseService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate, projectSecretKey);
       setEditingEntry(null);
       onRefresh();
     } catch (e) {
@@ -186,10 +248,15 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   const confirmDelete = async () => {
     if (!deletingEntry) return;
     setIsProcessing(true);
-    await FirebaseService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id);
-    setDeletingEntry(null);
-    setIsProcessing(false);
-    onRefresh();
+    try {
+      await FirebaseService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id, projectSecretKey);
+      setDeletingEntry(null);
+      onRefresh();
+    } catch (e) {
+      alert("Error deleting entry");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -204,6 +271,19 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
                <span className="text-xs text-slate-500 border-l border-slate-700 pl-3">
                  {collection.entries.length} {collection.entries.length === 1 ? 'Entry' : 'Entries'}
                </span>
+               {selectedIds.size > 0 && (
+                 <div className="flex items-center gap-2 pl-3 border-l border-slate-700">
+                   <span className="text-xs text-brand-400 font-medium">{selectedIds.size} selected</span>
+                   <button 
+                     onClick={handleBulkDelete}
+                     disabled={isBulkDeleting}
+                     className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-red-500/10 px-2 py-1 rounded border border-red-500/20 disabled:opacity-50"
+                   >
+                     <Trash2 className="w-3 h-3" />
+                     Delete Selected
+                   </button>
+                 </div>
+               )}
            </div>
            
            <div className="flex bg-slate-800 rounded-lg p-1 space-x-1">
@@ -237,6 +317,9 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
             entries={collection.entries} 
             onEdit={handleEditClick}
             onDelete={handleDeleteClick}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+            onToggleSelectAll={handleToggleSelectAll}
           />
         ) : (
           <div className="bg-slate-950 px-4 py-4 overflow-x-auto max-h-[500px] custom-scrollbar">
@@ -439,14 +522,39 @@ export const Dashboard: React.FC = () => {
   const [deleteConfirmation, setDeleteConfirmation] = useState<string | null>(null);
 
   const fetchProjects = async () => {
-    const data = await FirebaseService.getAllProjects();
-    setProjects(data);
-    if (selectedProject) {
-      const updated = data.find(p => p.id === selectedProject.id);
-      if (updated) setSelectedProject(updated);
-      else setSelectedProject(null); // Project deleted
+    setLoading(true);
+    try {
+      const data = await FirebaseService.getAllProjects();
+      setProjects(data);
+      if (selectedProject) {
+        const updated = data.find(p => p.id === selectedProject.id);
+        if (updated) {
+          // Fetch collections for the selected project
+          const collections = await FirebaseService.getProjectCollections(updated.id);
+          setSelectedProject({ ...updated, collections });
+        } else {
+          setSelectedProject(null);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const handleSelectProject = async (project: Project) => {
+    setSelectedProject(project);
+    setActiveTab('data');
+    setLoading(true);
+    try {
+      const collections = await FirebaseService.getProjectCollections(project.id);
+      setSelectedProject({ ...project, collections });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -543,7 +651,7 @@ export const Dashboard: React.FC = () => {
             {projects.map(project => (
               <div 
                 key={project.id}
-                onClick={() => { setSelectedProject(project); setActiveTab('data'); }}
+                onClick={() => handleSelectProject(project)}
                 className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedProject?.id === project.id ? 'bg-brand-900/20 border-brand-500/50 shadow-lg shadow-brand-500/10' : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
               >
                 <div className="flex justify-between items-start">
@@ -663,6 +771,7 @@ export const Dashboard: React.FC = () => {
                               key={col.name} 
                               collection={col} 
                               projectApiKey={selectedProject.apiKey}
+                              projectSecretKey={selectedProject.secretKey}
                               onRefresh={fetchProjects}
                             />
                           ))}

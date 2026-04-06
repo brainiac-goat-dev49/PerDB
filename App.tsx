@@ -9,7 +9,7 @@ import { Docs } from './pages/Docs';
 import { Playground } from './pages/Playground';
 import { Auth } from './pages/Auth';
 import { About } from './pages/About';
-import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const AppContent: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

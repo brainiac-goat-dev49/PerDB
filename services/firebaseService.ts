@@ -15,26 +15,9 @@ import { auth, db } from '../lib/firebase';
 import { Project, DBEntry, Collection } from '../types';
 
 // Helper to convert Firestore snapshots to our App types
-const mapDocToProject = async (docSnap: any): Promise<Project> => {
+const mapDocToProject = (docSnap: any): Project => {
   const data = docSnap.data();
-  // We need to fetch collections manually since they are subcollections
-  // Note: listing subcollections is not possible directly in client SDK without knowing names
-  // For this architecture, we will store a metadata array of collection names on the parent project doc
-  // OR we just query the known collections. 
   
-  // Strategy: For the dashboard to be fast, we will store a 'collectionNames' array on the Project document.
-  // When we fetch a project, we iterate those names to fetch the data.
-  
-  const colNames: string[] = data.collectionList || [];
-  const collections: Collection[] = [];
-
-  for (const name of colNames) {
-    const colRef = collection(db, `projects/${docSnap.id}/collections/${name}/docs`);
-    const snapshot = await getDocs(colRef);
-    const entries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    collections.push({ name, entries });
-  }
-
   return {
     id: docSnap.id,
     ownerId: data.ownerId,
@@ -53,7 +36,7 @@ const mapDocToProject = async (docSnap: any): Promise<Project> => {
   }
 }`,
     stats: data.stats || { reads: 0, writes: 0, activeUsers: 0 },
-    collections,
+    collections: [], // We fetch these on demand now
     createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
     updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
   };
@@ -61,6 +44,25 @@ const mapDocToProject = async (docSnap: any): Promise<Project> => {
 
 export const FirebaseService = {
   // --- Management API ---
+
+  getProjectCollections: async (projectId: string): Promise<Collection[]> => {
+    const docRef = doc(db, 'projects', projectId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return [];
+    
+    const data = docSnap.data();
+    const colNames: string[] = data.collectionList || [];
+    const collections: Collection[] = [];
+
+    for (const name of colNames) {
+      const colRef = collection(db, `projects/${projectId}/collections/${name}/docs`);
+      const q = query(colRef, serverTimestamp() ? where('_created', '!=', null) : where('id', '!=', '')); // Dummy query to allow ordering if needed, but let's keep it simple
+      const snapshot = await getDocs(colRef);
+      const entries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      collections.push({ name, entries });
+    }
+    return collections;
+  },
 
   createProject: async (name: string): Promise<Project> => {
     const user = auth.currentUser;
@@ -110,7 +112,7 @@ export const FirebaseService = {
     const q = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
     const querySnapshot = await getDocs(q);
     
-    const projects = await Promise.all(querySnapshot.docs.map(mapDocToProject));
+    const projects = querySnapshot.docs.map(mapDocToProject);
     return projects;
   },
 
@@ -156,12 +158,13 @@ export const FirebaseService = {
     return result;
   },
 
-  runtimeUpdate: async (apiKey: string, collectionName: string, docId: string, data: any): Promise<void> => {
+  runtimeUpdate: async (apiKey: string, collectionName: string, docId: string, data: any, secretKey?: string): Promise<void> => {
     const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}&id=${docId}`, {
       method: 'PUT',
       headers: { 
         'Content-Type': 'application/json',
-        'x-api-key': apiKey
+        'x-api-key': apiKey,
+        ...(secretKey ? { 'x-secret-key': secretKey } : {})
       },
       body: JSON.stringify(data)
     });
@@ -169,11 +172,12 @@ export const FirebaseService = {
     if (result.error) throw new Error(result.error);
   },
 
-  runtimeDelete: async (apiKey: string, collectionName: string, docId: string): Promise<void> => {
+  runtimeDelete: async (apiKey: string, collectionName: string, docId: string, secretKey?: string): Promise<void> => {
     const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}&id=${docId}`, {
       method: 'DELETE',
       headers: {
-        'x-api-key': apiKey
+        'x-api-key': apiKey,
+        ...(secretKey ? { 'x-secret-key': secretKey } : {})
       }
     });
     const result = await res.json();
