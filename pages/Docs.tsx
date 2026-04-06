@@ -48,8 +48,7 @@ export const Docs: React.FC = () => {
     </button>
   );
 
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://perdb.koyeb.app';
-  const apiEndpoint = `${currentOrigin}/api`;
+  const apiEndpoint = 'https://perdb.koyeb.app/api';
 
   const CLIENT_SDK_CODE = `/**
  * PerDB SDK (v1.0)

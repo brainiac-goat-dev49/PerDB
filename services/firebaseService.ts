@@ -131,9 +131,12 @@ export const FirebaseService = {
   // --- Runtime API (Uses the Server API to bypass Firestore rules) ---
   
   runtimeAdd: async (apiKey: string, collectionName: string, data: any): Promise<any> => {
-    const res = await fetch(`/api?collection=${collectionName}&key=${apiKey}`, {
+    const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
       body: JSON.stringify(data)
     });
     const result = await res.json();
@@ -142,8 +145,11 @@ export const FirebaseService = {
   },
 
   runtimeGet: async (apiKey: string, collectionName: string): Promise<DBEntry[]> => {
-    const res = await fetch(`/api?collection=${collectionName}&key=${apiKey}`, {
-      method: 'GET'
+    const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}`, {
+      method: 'GET',
+      headers: {
+        'x-api-key': apiKey
+      }
     });
     const result = await res.json();
     if (result.error) throw new Error(result.error);
@@ -151,9 +157,12 @@ export const FirebaseService = {
   },
 
   runtimeUpdate: async (apiKey: string, collectionName: string, docId: string, data: any): Promise<void> => {
-    const res = await fetch(`/api?collection=${collectionName}&key=${apiKey}&id=${docId}`, {
+    const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}&id=${docId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
       body: JSON.stringify(data)
     });
     const result = await res.json();
@@ -161,8 +170,11 @@ export const FirebaseService = {
   },
 
   runtimeDelete: async (apiKey: string, collectionName: string, docId: string): Promise<void> => {
-    const res = await fetch(`/api?collection=${collectionName}&key=${apiKey}&id=${docId}`, {
-      method: 'DELETE'
+    const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}&id=${docId}`, {
+      method: 'DELETE',
+      headers: {
+        'x-api-key': apiKey
+      }
     });
     const result = await res.json();
     if (result.error) throw new Error(result.error);
