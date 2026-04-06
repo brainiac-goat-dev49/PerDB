@@ -85,6 +85,17 @@ async function startServer() {
         return res.status(401).json({ error: 'Missing API Key' });
       }
 
+      // --- Domain Restriction ---
+      const origin = req.headers.origin || req.headers.referer || '';
+      const isPerchance = origin.includes('perchance.org');
+      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+
+      if (!isPerchance && !isLocalhost && process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ 
+          error: 'Forbidden: PerDB is currently restricted to perchance.org projects during beta.' 
+        });
+      }
+
       // 2. Lookup Project by API Key
       const projectsSnap = await firestore.collection('projects')
         .where('apiKey', '==', apiKey)
@@ -146,12 +157,17 @@ async function startServer() {
           _created: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // Update collection list metadata
+        // Update collection list metadata and stats
+        const updateData: any = {
+          'stats.writes': admin.firestore.FieldValue.increment(1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
         if (!projectData.collectionList?.includes(collectionName)) {
-           await projectDoc.ref.update({
-             collectionList: admin.firestore.FieldValue.arrayUnion(collectionName)
-           });
+           updateData.collectionList = admin.firestore.FieldValue.arrayUnion(collectionName);
         }
+
+        await projectDoc.ref.update(updateData);
 
         return res.status(200).json({ success: true, id: docRef.id });
       }
@@ -164,6 +180,11 @@ async function startServer() {
         if (!isAllowed && readRule !== undefined) {
           return res.status(403).json({ error: 'Permission Denied' });
         }
+
+        // Update stats
+        await projectDoc.ref.update({
+          'stats.reads': admin.firestore.FieldValue.increment(1)
+        });
 
         const limit = parseInt(req.query.limit as string) || 50;
         const snapshot = await firestore.collection(docPath)
@@ -208,6 +229,11 @@ async function startServer() {
           _updated: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        // Update stats
+        await projectDoc.ref.update({
+          'stats.writes': admin.firestore.FieldValue.increment(1)
+        });
+
         return res.status(200).json({ success: true });
       }
 
@@ -232,6 +258,12 @@ async function startServer() {
         }
 
         await docRef.delete();
+
+        // Update stats
+        await projectDoc.ref.update({
+          'stats.writes': admin.firestore.FieldValue.increment(1)
+        });
+
         return res.status(200).json({ success: true });
       }
 

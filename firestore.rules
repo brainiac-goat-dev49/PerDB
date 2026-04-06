@@ -2,28 +2,41 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // helper to check ownership
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
     function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isProjectOwner(projectId) {
+      return isAuthenticated() && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
     }
 
-    // helper to check if user owns the project
-    function ownsProject(projectId) {
-      return isOwner(get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId);
-    }
-
+    // Projects Collection
     match /projects/{projectId} {
-      // 1. Allow creation if you are who you say you are
-      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      // Allow users to list their own projects
+      allow list: if isAuthenticated() && request.query.limit <= 100;
       
-      // 2. Allow reading/updating/deleting only if you own the project
-      allow read, update, delete: if isOwner(resource.data.ownerId);
-      
-      // 3. Nested Collections (The actual data)
+      // Allow users to read, create, update, delete their own projects
+      allow get, create, update, delete: if isAuthenticated() && (
+        (request.method == 'create' && request.resource.data.ownerId == request.auth.uid) ||
+        (resource.data.ownerId == request.auth.uid)
+      );
+
+      // Subcollections for project data
       match /collections/{collectionName}/docs/{docId} {
-        // We allow read/write if the user owns the parent project
-        allow read, write: if ownsProject(projectId);
+        // Allow project owner to read/write everything in their project's subcollections
+        // This is used by the dashboard to manage data
+        allow read, write: if isProjectOwner(projectId);
       }
+    }
+    
+    // Default Deny
+    match /{path=**} {
+      allow read, write: if false;
     }
   }
 }

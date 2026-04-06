@@ -3,26 +3,29 @@ import React from 'react';
 export const About: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto px-4 py-16">
-      <h1 className="text-4xl font-bold text-white mb-6">About PerDB</h1>
-      <p className="text-slate-400 mb-4">
+      <h1 className="text-4xl font-bold text-white mb-6 tracking-tight">About PerDB</h1>
+      <p className="text-slate-400 mb-8 text-lg leading-relaxed">
         PerDB is the missing cloud backend for Perchance generators. We provide persistent cloud storage, real-time synchronization, and simple security rules to make your generators more powerful.
       </p>
-      <p className="text-slate-400 mb-4">
-        Our mission is to provide a reliable, easy-to-use database solution for creative coders on Perchance. Whether you're building a simple high-score table or a complex multiplayer RPG, PerDB scales with your imagination.
-      </p>
-      <p className="text-slate-400 mb-4">
-        Currently, PerDB is in <strong>Open Source Beta</strong>. We are committed to keeping the core platform accessible and community-driven.
-      </p>
       
-      <div className="mt-8 p-6 bg-brand-900/10 border border-brand-500/20 rounded-xl">
-        <h3 className="text-lg font-semibold text-brand-300 mb-2">Future & Monetization</h3>
-        <p className="text-slate-400 text-sm">
-          To ensure the long-term sustainability of the platform, we may introduce non-intrusive ad monetization in the future. Our goal is to keep the service free for the majority of users while covering infrastructure costs.
-        </p>
+      <div className="space-y-6 mb-12">
+        <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
+          <h3 className="text-xl font-semibold text-white mb-3">Our Mission</h3>
+          <p className="text-slate-400 leading-relaxed">
+            Perchance is an incredible platform for creativity, but it lacks a native way to store data across sessions or users. PerDB fills that gap by providing a simple, key-value and document-based cloud database that anyone can use with just a few lines of code.
+          </p>
+        </div>
+
+        <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
+          <h3 className="text-xl font-semibold text-white mb-3">Open Source & Community Driven</h3>
+          <p className="text-slate-400 leading-relaxed">
+            We believe in keeping the web open. PerDB is currently in open beta and is free for all Perchance creators. We might explore monetization through ads in the future to keep the servers running, but we will always prioritize the community's needs.
+          </p>
+        </div>
       </div>
 
-      <div className="mt-12 p-6 bg-slate-900 rounded-xl border border-slate-800">
-        <h3 className="text-lg font-semibold text-white mb-2">Credits</h3>
+      <div className="mt-12 p-6 bg-brand-900/10 rounded-xl border border-brand-500/20">
+        <h3 className="text-lg font-semibold text-white mb-2 tracking-tight">Credits</h3>
         <p className="text-slate-400">
           Created by <span className="text-brand-400 font-bold">Brainiac-Goat-Dev</span>.
         </p>

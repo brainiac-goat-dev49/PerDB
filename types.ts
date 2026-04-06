@@ -24,9 +24,12 @@ export interface Project {
   secretKey?: string; // Private key for server-side admin
   permissions: ProjectPermissions;
   rules?: string; // JSON string of security rules
+  stats?: {
+    reads: number;
+    writes: number;
+    activeUsers: number;
+  };
   collections: Collection[];
-  totalReads?: number;
-  totalWrites?: number;
   createdAt: string;
   updatedAt: string;
 }

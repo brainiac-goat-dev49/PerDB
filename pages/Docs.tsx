@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { BookOpen, Code, Terminal, Cpu, Server, Shield, Database, Lock, Copy, Check } from 'lucide-react';
-import { Card, Button } from '../components/ui';
+import { BookOpen, Code, Terminal, Cpu, Server, Shield, Database, Lock, Copy, Check, Play, ChevronRight } from 'lucide-react';
+import { Card, Button, Badge } from '../components/ui';
 import { generateCodeSnippet } from '../services/aiService';
 
 export const Docs: React.FC = () => {
@@ -209,8 +209,6 @@ class PerDB {
                 <NavLink target="reading" label="Reading Data" />
                 <NavLink target="usecases" label="Common Use Cases" />
                 <NavLink target="security" label="Security Rules" />
-                <NavLink target="limits" label="Pricing & Limits" />
-                <NavLink target="examples" label="Try an App" />
               </nav>
 
               <div className="mt-8 p-4 bg-gradient-to-br from-brand-900/50 to-slate-900 border border-brand-500/20 rounded-xl">
@@ -406,6 +404,57 @@ scores.forEach(s => {
 
             <div className="w-full h-px bg-slate-800" />
 
+            <section id="pricing">
+               <div className="flex items-center space-x-3 mb-6">
+                  <Badge variant="info">Free Beta</Badge>
+                  <h2 className="text-2xl font-bold text-white">Pricing & Availability</h2>
+               </div>
+               <p className="text-slate-400 mb-4">
+                 PerDB is currently <strong>100% free</strong> during our open beta phase. We want to help the Perchance community build amazing things without worrying about costs.
+               </p>
+               <div className="bg-amber-900/10 border border-amber-500/20 p-4 rounded-xl mb-6">
+                 <h4 className="text-amber-400 font-bold text-xs uppercase mb-2 flex items-center">
+                   <Shield className="w-3 h-3 mr-2" /> Domain Restriction
+                 </h4>
+                 <p className="text-xs text-slate-400">
+                   To prevent abuse and keep the service free, PerDB currently only accepts requests from projects hosted on <strong>perchance.org</strong> (e.g., <code>perchance.org/your-project</code>). Local development (localhost) is also supported.
+                 </p>
+               </div>
+               <p className="text-sm text-slate-500 italic">
+                 Note: We may monetize with non-intrusive ads in the future to cover server costs while keeping the platform open-source and community-focused.
+               </p>
+            </section>
+
+            <div className="w-full h-px bg-slate-800" />
+
+            <section id="examples">
+               <div className="flex items-center space-x-3 mb-6">
+                  <Play className="w-6 h-6 text-brand-400" />
+                  <h2 className="text-2xl font-bold text-white">Live Examples</h2>
+               </div>
+               <Card className="bg-slate-900/50 border-brand-500/20 hover:border-brand-500/40 transition-colors group">
+                 <div className="flex justify-between items-start">
+                   <div>
+                     <h3 className="text-lg font-semibold text-white mb-2">Per-Chat</h3>
+                     <p className="text-sm text-slate-400 mb-4">A real-time chat application built entirely on Perchance using PerDB for message persistence.</p>
+                     <a 
+                       href="https://perchance.org/per-chat" 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       className="inline-flex items-center text-brand-400 hover:text-brand-300 font-medium text-sm"
+                     >
+                       Try Per-Chat <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+                     </a>
+                   </div>
+                   <div className="w-12 h-12 bg-brand-500/10 rounded-lg flex items-center justify-center">
+                     <Database className="w-6 h-6 text-brand-400" />
+                   </div>
+                 </div>
+               </Card>
+            </section>
+
+            <div className="w-full h-px bg-slate-800" />
+
             <section id="usecases">
                <div className="flex items-center space-x-3 mb-6">
                   <Database className="w-6 h-6 text-brand-400" />
@@ -522,67 +571,6 @@ const state = await db.get("world", 1);`}
                       <code className="text-xs text-slate-300">".write": "auth.id == data.ownerId"</code>
                     </div>
                   </div>
-               </div>
-            </section>
-
-            <div className="w-full h-px bg-slate-800" />
-
-            <section id="limits">
-               <div className="flex items-center space-x-3 mb-6">
-                  <Shield className="w-6 h-6 text-brand-400" />
-                  <h2 className="text-2xl font-bold text-white">Pricing & Limits</h2>
-               </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <Card className="bg-slate-900/50 border-slate-800 p-6">
-                   <h3 className="text-lg font-semibold text-white mb-2 font-bold">Platform Status: Free</h3>
-                   <p className="text-sm text-slate-400">
-                     PerDB is currently <strong>100% free</strong> to use during our beta phase. We want to empower the Perchance community to build amazing things without worrying about costs.
-                   </p>
-                 </Card>
-                 <Card className="bg-slate-900/50 border-slate-800 p-6">
-                   <h3 className="text-lg font-semibold text-white mb-2 font-bold">Domain Restriction</h3>
-                   <p className="text-sm text-slate-400">
-                     To prevent abuse and ensure stability, PerDB currently only accepts requests from projects hosted on <strong>perchance.org</strong>.
-                   </p>
-                   <div className="mt-4 p-3 bg-brand-900/20 border border-brand-500/20 rounded text-xs text-brand-300">
-                     Example: perchance.org/my-cool-generator
-                   </div>
-                 </Card>
-               </div>
-            </section>
-
-            <div className="w-full h-px bg-slate-800" />
-
-            <section id="examples">
-               <div className="flex items-center space-x-3 mb-6">
-                  <Database className="w-6 h-6 text-brand-400" />
-                  <h2 className="text-2xl font-bold text-white">Try an App</h2>
-               </div>
-               <p className="text-slate-400 mb-6">
-                 See PerDB in action! Here are some examples of what you can build.
-               </p>
-               <div className="grid grid-cols-1 gap-6">
-                 <Card className="bg-gradient-to-r from-brand-900/20 to-slate-900 border-brand-500/30 p-6">
-                   <div className="flex justify-between items-start">
-                     <div>
-                       <h3 className="text-xl font-bold text-white mb-2">Per-Chat</h3>
-                       <p className="text-slate-400 text-sm mb-4">
-                         A real-time global chat application built entirely on Perchance using PerDB for message persistence.
-                       </p>
-                       <a 
-                         href="https://perchance.org/per-chat" 
-                         target="_blank" 
-                         rel="noopener noreferrer"
-                         className="inline-flex items-center text-brand-400 hover:text-brand-300 font-semibold"
-                       >
-                         Visit perchance.org/per-chat
-                       </a>
-                     </div>
-                     <div className="bg-brand-500/10 p-3 rounded-xl border border-brand-500/20">
-                       <Database className="w-8 h-8 text-brand-400" />
-                     </div>
-                   </div>
-                 </Card>
                </div>
             </section>
           </div>

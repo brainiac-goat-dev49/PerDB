@@ -1,10 +1,8 @@
 {
-  "projectId": "dark-pipe-467811-q1",
-  "appId": "1:149515905736:web:e10453ce39ed84e02ad3fd",
-  "apiKey": "AIzaSyCqlWGM8wZWu574Kp25huFw7Evq0IeSeiQ",
-  "authDomain": "dark-pipe-467811-q1.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-bfc25dc6-c2da-4a27-b17a-0c67d3122c11",
-  "storageBucket": "dark-pipe-467811-q1.firebasestorage.app",
-  "messagingSenderId": "149515905736",
-  "measurementId": "G-2V06YZY74N"
+  "apiKey": "AIzaSyC-xMfx2NmJGXxEKGIttsND8Dlyr-kSkpQ",
+  "authDomain": "sample-firebase-ai-app-7946d.firebaseapp.com",
+  "projectId": "sample-firebase-ai-app-7946d",
+  "storageBucket": "sample-firebase-ai-app-7946d.firebasestorage.app",
+  "messagingSenderId": "889021229266",
+  "appId": "1:889021229266:web:bebf57996e90939c70650b"
 }

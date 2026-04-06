@@ -637,17 +637,23 @@ export const Dashboard: React.FC = () => {
                       ) : (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
                           {/* Analytics */}
-                          <div className="grid grid-cols-2 gap-4 mb-6">
+                          <div className="grid grid-cols-3 gap-4 mb-6">
                             <Card className="p-4 border-slate-700/50 bg-slate-900/50">
                               <div className="text-xs text-slate-500 uppercase">Total Reads</div>
                               <div className="text-2xl font-bold text-white mt-1">
-                                {selectedProject.totalReads?.toLocaleString() || 0}
+                                {selectedProject.stats?.reads?.toLocaleString() || 0}
                               </div>
                             </Card>
                             <Card className="p-4 border-slate-700/50 bg-slate-900/50">
                               <div className="text-xs text-slate-500 uppercase">Total Writes</div>
                               <div className="text-2xl font-bold text-white mt-1">
-                                {selectedProject.totalWrites?.toLocaleString() || 0}
+                                {selectedProject.stats?.writes?.toLocaleString() || 0}
+                              </div>
+                            </Card>
+                            <Card className="p-4 border-slate-700/50 bg-slate-900/50">
+                              <div className="text-xs text-slate-500 uppercase">Active Users</div>
+                              <div className="text-2xl font-bold text-white mt-1">
+                                {selectedProject.stats?.activeUsers?.toLocaleString() || 0}
                               </div>
                             </Card>
                           </div>
