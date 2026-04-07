@@ -63,6 +63,11 @@ async function startServer() {
   app.use(cors({ origin: true }));
   app.use(bodyParser.json());
 
+  // API routes go here
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", env: process.env.NODE_ENV });
+  });
+
   // --- PerDB API v1 ---
   app.all('/api', async (req, res) => {
     // Debug endpoint
@@ -368,11 +373,13 @@ async function startServer() {
     const indexPath = path.join(distPath, 'index.html');
     
     console.log(`Production mode: Serving static files from ${distPath}`);
+    console.log(`Index path: ${indexPath}`);
     
     app.use(express.static(distPath));
     
-    // Express 5 requires a named parameter for wildcards
-    app.get('*all', (req, res) => {
+    // Express 5 wildcard
+    app.get('*', (req, res) => {
+      console.log(`Serving index.html for request: ${req.url}`);
       res.sendFile(indexPath, (err) => {
         if (err) {
           console.error(`Failed to send index.html from ${indexPath}:`, err);
