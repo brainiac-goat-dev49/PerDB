@@ -37,6 +37,19 @@ function getDb() {
   return db;
 }
 
+// Simple in-memory cache for GET requests
+const getCache = new Map<string, { data: any, timestamp: number }>();
+const CACHE_TTL = 3000; // 3 seconds cache for same collection/limit
+
+// Project Metadata Cache (to avoid lookup on every request)
+const projectCache = new Map<string, { doc: any, timestamp: number }>();
+const PROJECT_CACHE_TTL = 60000; // 1 minute
+
+// Simple rate limiter
+const rateLimit = new Map<string, { count: number, lastReset: number }>();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 120; // 2 requests per second average
+
 async function startServer() {
   console.log("--- Starting PerDB Server ---");
   console.log(`Node Version: ${process.version}`);
@@ -86,20 +99,47 @@ async function startServer() {
         return res.status(401).json({ error: 'Missing API Key' });
       }
 
-      // 2. Lookup Project by API Key
-      const projectsSnap = await firestore.collection('projects')
-        .where('apiKey', '==', apiKey)
-        .limit(1)
-        .get();
+      // 2. Lookup Project by API Key (with Cache)
+      const apiKeyStr = apiKey as string;
+      const cachedProject = projectCache.get(apiKeyStr);
+      let projectDoc;
 
-      if (projectsSnap.empty) {
-        return res.status(403).json({ error: 'Invalid API Key' });
+      if (cachedProject && (Date.now() - cachedProject.timestamp < PROJECT_CACHE_TTL)) {
+        projectDoc = cachedProject.doc;
+      } else {
+        const projectsSnap = await firestore.collection('projects')
+          .where('apiKey', '==', apiKeyStr)
+          .limit(1)
+          .get();
+
+        if (projectsSnap.empty) {
+          return res.status(403).json({ error: 'Invalid API Key' });
+        }
+        projectDoc = projectsSnap.docs[0];
+        projectCache.set(apiKeyStr, { doc: projectDoc, timestamp: Date.now() });
       }
 
-      const projectDoc = projectsSnap.docs[0];
       const projectId = projectDoc.id;
       const projectData = projectDoc.data();
       
+      // --- Rate Limiting ---
+      const now = Date.now();
+      const limitData = rateLimit.get(apiKey) || { count: 0, lastReset: now };
+      
+      if (now - limitData.lastReset > RATE_LIMIT_WINDOW) {
+        limitData.count = 0;
+        limitData.lastReset = now;
+      }
+      
+      limitData.count++;
+      rateLimit.set(apiKey, limitData);
+      
+      if (limitData.count > MAX_REQUESTS_PER_WINDOW && !secretKey) {
+        return res.status(429).json({ 
+          error: 'Too Many Requests: You are exceeding the rate limit for this API Key. Please slow down.' 
+        });
+      }
+
       // Bypass rules if secret key matches
       const isMasterRequest = !!(secretKey && secretKey === projectData.secretKey);
 
@@ -196,6 +236,15 @@ async function startServer() {
 
       // --- GET: Read ---
       if (req.method === 'GET') {
+        const limit = parseInt(req.query.limit as string) || 50;
+        
+        // Check Cache first
+        const cacheKey = `${projectId}:${collectionName}:${limit}`;
+        const cached = getCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < CACHE_TTL) && !isMasterRequest) {
+           return res.status(200).json(cached.data);
+        }
+
         const readRule = projectRules[collectionName]?.['.read'];
         const isAllowed = isMasterRequest || evaluateRule(readRule, { auth: authContext, newData: null, data: null });
 
@@ -208,7 +257,6 @@ async function startServer() {
           'stats.reads': admin.firestore.FieldValue.increment(1)
         });
 
-        const limit = parseInt(req.query.limit as string) || 50;
         const snapshot = await firestore.collection(docPath)
           .orderBy('_created', 'desc')
           .limit(limit)
@@ -219,6 +267,11 @@ async function startServer() {
           ...doc.data(),
           _created: doc.data()._created?.toDate?.()?.toISOString()
         }));
+
+        // Store in cache
+        if (!isMasterRequest) {
+          getCache.set(cacheKey, { data, timestamp: Date.now() });
+        }
 
         return res.status(200).json(data);
       }

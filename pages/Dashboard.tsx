@@ -174,6 +174,7 @@ interface FullCollectionModalProps {
   isOpen: boolean;
   onClose: () => void;
   collection: Collection;
+  projectId: string;
   projectApiKey: string;
   projectSecretKey?: string;
   onRefresh: () => void;
@@ -183,6 +184,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
   isOpen,
   onClose,
   collection,
+  projectId,
   projectApiKey,
   projectSecretKey,
   onRefresh
@@ -194,10 +196,30 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
   const [editJson, setEditJson] = useState('');
   const [deletingEntry, setDeletingEntry] = useState<DBEntry | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoadingFull, setIsLoadingFull] = useState(false);
+  const [fullEntries, setFullEntries] = useState<DBEntry[]>([]);
   const [alertInfo, setAlertInfo] = useState<{ title: string; message: string } | null>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
-  const filteredEntries = collection.entries.filter(entry => {
+  const fetchFullEntries = async () => {
+    setIsLoadingFull(true);
+    try {
+      const data = await FirebaseService.getFullCollection(projectId, collection.name, itemsPerPage);
+      setFullEntries(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingFull(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchFullEntries();
+    }
+  }, [isOpen, collection.name, itemsPerPage]);
+
+  const filteredEntries = (fullEntries.length > 0 ? fullEntries : collection.entries).filter(entry => {
     const searchStr = searchTerm.toLowerCase();
     return Object.values(entry).some(val => 
       String(val).toLowerCase().includes(searchStr)
@@ -228,6 +250,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
       await FirebaseService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate, projectSecretKey);
       setEditingEntry(null);
       onRefresh();
+      fetchFullEntries();
     } catch (e: any) {
       console.error("Save error:", e);
       setAlertInfo({ title: "Error", message: e.message || "Invalid JSON or Error Saving" });
@@ -243,6 +266,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
       await FirebaseService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id, projectSecretKey);
       setDeletingEntry(null);
       onRefresh();
+      fetchFullEntries();
     } catch (e: any) {
       console.error("Delete error:", e);
       setAlertInfo({ title: "Error", message: e.message || "Error deleting entry" });
@@ -261,6 +285,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
       ));
       setSelectedIds(new Set());
       onRefresh();
+      fetchFullEntries();
     } catch (e: any) {
       console.error("Bulk delete error:", e);
       setAlertInfo({ title: "Error", message: e.message || "Error during bulk delete" });
@@ -302,7 +327,15 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
           )}
         </div>
 
-        <div className="flex-1 min-h-0 border border-slate-800 rounded-lg overflow-hidden bg-slate-950/50">
+        <div className="flex-1 min-h-0 border border-slate-800 rounded-lg overflow-hidden bg-slate-950/50 relative">
+          {isLoadingFull && (
+            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-10 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-slate-400 font-mono">Fetching full collection...</span>
+              </div>
+            </div>
+          )}
           <CollectionTable 
             entries={filteredEntries}
             onEdit={(entry) => { setEditingEntry(entry); setEditJson(JSON.stringify(entry, null, 2)); }}
@@ -363,6 +396,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
 
 interface CollectionViewerProps {
   collection: Collection;
+  projectId: string;
   projectApiKey: string;
   projectSecretKey?: string;
   onRefresh: () => void;
@@ -370,6 +404,7 @@ interface CollectionViewerProps {
 
 const CollectionViewer: React.FC<CollectionViewerProps> = ({ 
   collection, 
+  projectId,
   projectApiKey,
   projectSecretKey,
   onRefresh 
@@ -554,6 +589,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
         isOpen={isFullViewOpen}
         onClose={() => setIsFullViewOpen(false)}
         collection={collection}
+        projectId={projectId}
         projectApiKey={projectApiKey}
         projectSecretKey={projectSecretKey}
         onRefresh={onRefresh}
@@ -1115,6 +1151,7 @@ export const Dashboard: React.FC = () => {
                             <CollectionViewer 
                               key={col.name} 
                               collection={col} 
+                              projectId={selectedProject.id}
                               projectApiKey={selectedProject.apiKey}
                               projectSecretKey={selectedProject.secretKey}
                               onRefresh={fetchProjects}

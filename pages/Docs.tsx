@@ -62,6 +62,8 @@ class PerDB {
     this.auth = null;
     // The Live PerDB Platform Endpoint
     this.endpoint = "${apiEndpoint}"; 
+    this.cache = new Map();
+    this.CACHE_TTL = 2000; // 2 seconds client-side throttle
   }
 
   /**
@@ -110,6 +112,12 @@ class PerDB {
    * @param {number} limit - Max number of items (default 50, max 200)
    */
   async get(collection, limit = 50) {
+    const cacheKey = \`\${collection}:\${limit}\`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL)) {
+      return cached.data;
+    }
+
     try {
       const headers = { "x-api-key": this.apiKey };
       if (this.secretKey) headers["x-secret-key"] = this.secretKey;
@@ -124,7 +132,9 @@ class PerDB {
         method: "GET",
         headers: headers
       });
-      return await res.json();
+      const data = await res.json();
+      this.cache.set(cacheKey, { data, timestamp: Date.now() });
+      return data;
     } catch (err) {
       console.error("PerDB Read Error:", err);
       return [];

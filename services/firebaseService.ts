@@ -9,7 +9,9 @@ import {
   deleteDoc, 
   updateDoc, 
   getDoc,
-  serverTimestamp
+  serverTimestamp,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { Project, DBEntry, Collection } from '../types';
@@ -60,12 +62,19 @@ export const FirebaseService = {
 
     for (const name of colNames) {
       const colRef = collection(db, `projects/${projectId}/collections/${name}/docs`);
-      const q = query(colRef, serverTimestamp() ? where('_created', '!=', null) : where('id', '!=', '')); // Dummy query to allow ordering if needed, but let's keep it simple
-      const snapshot = await getDocs(colRef);
+      const q = query(colRef, orderBy('_created', 'desc'), limit(10));
+      const snapshot = await getDocs(q);
       const entries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       collections.push({ name, entries });
     }
     return collections;
+  },
+
+  getFullCollection: async (projectId: string, collectionName: string, limitCount: number = 50): Promise<DBEntry[]> => {
+    const colRef = collection(db, `projects/${projectId}/collections/${collectionName}/docs`);
+    const q = query(colRef, orderBy('_created', 'desc'), limit(limitCount));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as DBEntry[];
   },
 
   createProject: async (name: string): Promise<Project> => {
