@@ -624,10 +624,21 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const handleUpdateRules = async (newRules: string) => {
+  const [newOrigin, setNewOrigin] = useState('');
+
+  const handleUpdateProject = async (data: Partial<Project>) => {
     if (!selectedProject) return;
-    await FirebaseService.updateProject(selectedProject.id, { rules: newRules });
-    await fetchProjects(); // Refresh to ensure sync
+    try {
+      await FirebaseService.updateProject(selectedProject.id, data);
+      await fetchProjects();
+    } catch (err) {
+      console.error(err);
+      setAlertInfo({ title: "Error", message: "Failed to update project settings" });
+    }
+  };
+
+  const handleUpdateRules = async (newRules: string) => {
+    await handleUpdateProject({ rules: newRules });
   };
 
   return (
@@ -738,6 +749,92 @@ export const Dashboard: React.FC = () => {
                       <p className="text-xs text-slate-500 mt-2">
                         Use this key in your Perchance code: <span className="font-mono text-slate-400">new PerDB("{selectedProject.apiKey}")</span>
                       </p>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                        Secret Admin Key
+                        <Badge variant="danger" className="text-[8px] px-1 py-0">Private</Badge>
+                      </label>
+                      <div className="flex mt-1.5 group">
+                        <input 
+                          type="password"
+                          readOnly
+                          value={selectedProject.secretKey}
+                          className="flex-1 bg-slate-950 rounded-l-lg border border-r-0 border-slate-700 px-3 py-2 text-sm text-red-400 font-mono overflow-x-auto whitespace-nowrap group-hover:border-slate-600 transition-colors focus:outline-none"
+                        />
+                        <button 
+                          onClick={() => navigator.clipboard.writeText(selectedProject.secretKey || '')}
+                          className="bg-slate-800 hover:bg-slate-700 border border-l-0 border-slate-700 group-hover:border-slate-600 px-3 rounded-r-lg text-slate-300 transition-all active:bg-slate-600"
+                          title="Copy Secret Key"
+                        >
+                          <Key className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">
+                        Bypasses all security rules and domain locking. <span className="text-red-500/70 font-medium">NEVER share this key or put it in public code.</span>
+                      </p>
+                    </div>
+
+                    <div className="border-t border-slate-700/50 pt-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Domain Locking</label>
+                        <Badge variant="info">Security</Badge>
+                      </div>
+                      <p className="text-xs text-slate-500 mb-3">
+                        Restrict API requests to specific Perchance generators. If empty, all <span className="text-slate-400">perchance.org</span> domains are allowed.
+                      </p>
+                      
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {selectedProject.permissions.allowedOrigins.map((origin) => (
+                          <div key={origin} className="flex items-center bg-slate-900 border border-slate-700 rounded-md px-2 py-1 group">
+                            <span className="text-xs text-slate-300 font-mono">{origin}</span>
+                            <button 
+                              onClick={() => {
+                                const next = selectedProject.permissions.allowedOrigins.filter(o => o !== origin);
+                                handleUpdateProject({ permissions: { ...selectedProject.permissions, allowedOrigins: next } });
+                              }}
+                              className="ml-2 text-slate-500 hover:text-red-400 transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {selectedProject.permissions.allowedOrigins.length === 0 && (
+                          <span className="text-xs text-slate-600 italic">No restrictions set (Open to all perchance.org)</span>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder="e.g. my-generator-name" 
+                          className="flex-1 h-9 text-xs"
+                          value={newOrigin}
+                          onChange={(e) => setNewOrigin(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newOrigin.trim()) {
+                              const next = [...selectedProject.permissions.allowedOrigins, newOrigin.trim()];
+                              handleUpdateProject({ permissions: { ...selectedProject.permissions, allowedOrigins: next } });
+                              setNewOrigin('');
+                            }
+                          }}
+                        />
+                        <Button 
+                          size="sm" 
+                          variant="secondary" 
+                          className="h-9"
+                          disabled={!newOrigin.trim()}
+                          onClick={() => {
+                            if (newOrigin.trim()) {
+                              const next = [...selectedProject.permissions.allowedOrigins, newOrigin.trim()];
+                              handleUpdateProject({ permissions: { ...selectedProject.permissions, allowedOrigins: next } });
+                              setNewOrigin('');
+                            }
+                          }}
+                        >
+                          Add
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>

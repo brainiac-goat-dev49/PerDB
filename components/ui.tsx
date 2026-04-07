@@ -77,14 +77,15 @@ export const Input: React.FC<InputProps> = ({ label, className = '', ...props })
 );
 
 // --- Badge ---
-export const Badge: React.FC<{ children: React.ReactNode; variant?: 'success' | 'warning' | 'info' }> = ({ children, variant = 'info' }) => {
+export const Badge: React.FC<{ children: React.ReactNode; variant?: 'success' | 'warning' | 'info' | 'danger'; className?: string }> = ({ children, variant = 'info', className = '' }) => {
   const styles = {
     success: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
     warning: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
     info: 'bg-brand-500/10 text-brand-400 border-brand-500/20',
+    danger: 'bg-red-500/10 text-red-400 border-red-500/20',
   };
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${styles[variant]}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${styles[variant]} ${className}`}>
       {children}
     </span>
   );

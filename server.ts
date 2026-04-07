@@ -86,17 +86,6 @@ async function startServer() {
         return res.status(401).json({ error: 'Missing API Key' });
       }
 
-      // --- Domain Restriction ---
-      const origin = req.headers.origin || req.headers.referer || '';
-      const isPerchance = origin.includes('perchance.org');
-      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-
-      if (!isPerchance && !isLocalhost && process.env.NODE_ENV === 'production') {
-        return res.status(403).json({ 
-          error: 'Forbidden: PerDB is currently restricted to perchance.org projects during beta.' 
-        });
-      }
-
       // 2. Lookup Project by API Key
       const projectsSnap = await firestore.collection('projects')
         .where('apiKey', '==', apiKey)
@@ -114,6 +103,26 @@ async function startServer() {
       // Bypass rules if secret key matches
       const isMasterRequest = secretKey === projectData.secretKey;
 
+      // --- Domain Restriction (Enforced per project) ---
+      const origin = req.headers.origin || req.headers.referer || '';
+      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+      
+      // If in production, check allowed origins (Master Key bypasses this)
+      if (process.env.NODE_ENV === 'production' && !isLocalhost && !isMasterRequest) {
+        const allowedOrigins = projectData.permissions?.allowedOrigins || [];
+        
+        // If no origins specified, we default to allowing all perchance.org for backward compatibility 
+        const isAllowed = allowedOrigins.length === 0 
+          ? origin.includes('perchance.org') 
+          : allowedOrigins.some((allowed: string) => origin.includes(allowed));
+
+        if (!isAllowed) {
+          return res.status(403).json({ 
+            error: `Forbidden: This API Key is locked to specific domains. Current origin: ${origin || 'unknown'}` 
+          });
+        }
+      }
+      
       const projectRules = typeof projectData.rules === 'string' 
         ? JSON.parse(projectData.rules) 
         : (projectData.rules || {});

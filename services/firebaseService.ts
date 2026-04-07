@@ -24,7 +24,11 @@ const mapDocToProject = (docSnap: any): Project => {
     name: data.name,
     apiKey: data.apiKey,
     secretKey: data.secretKey,
-    permissions: data.permissions,
+    permissions: data.permissions || {
+      allowPublicRead: true,
+      allowPublicWrite: false,
+      allowedOrigins: []
+    },
     rules: data.rules || `{
   "global": {
     ".read": "true",
