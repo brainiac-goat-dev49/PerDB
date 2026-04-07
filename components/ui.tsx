@@ -64,15 +64,23 @@ export const Card: React.FC<{ children: React.ReactNode; className?: string; tit
 // --- Input ---
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
+  icon?: LucideIcon;
 }
 
-export const Input: React.FC<InputProps> = ({ label, className = '', ...props }) => (
+export const Input: React.FC<InputProps> = ({ label, className = '', icon: Icon, ...props }) => (
   <div className="w-full">
     {label && <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">{label}</label>}
-    <input 
-      className={`w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 placeholder-slate-500 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition-colors ${className}`}
-      {...props}
-    />
+    <div className="relative">
+      {Icon && (
+        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500">
+          <Icon className="w-4 h-4" />
+        </div>
+      )}
+      <input 
+        className={`w-full bg-slate-900/50 border border-slate-700 rounded-lg ${Icon ? 'pl-11' : 'px-4'} py-2.5 text-slate-200 placeholder-slate-500 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition-colors ${className}`}
+        {...props}
+      />
+    </div>
   </div>
 );
 

@@ -134,6 +134,10 @@ export const FirebaseService = {
     });
   },
 
+  saveFeedback: async (feedback: { name: string; email: string; message: string; timestamp: string }): Promise<void> => {
+    await addDoc(collection(db, 'feedback'), feedback);
+  },
+
   // --- Runtime API (Uses the Server API to bypass Firestore rules) ---
   
   runtimeAdd: async (apiKey: string, collectionName: string, data: any): Promise<any> => {

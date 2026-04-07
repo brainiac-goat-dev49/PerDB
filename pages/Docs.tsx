@@ -328,19 +328,29 @@ class PerDB {
                  <div className="bg-[#0f172a] p-4 overflow-x-auto">
                    <pre className="font-mono text-sm leading-relaxed text-slate-300">
                      {`const db = new PerDB("pk_live_YOUR_API_KEY_HERE");
-// Optional: Use secret key to bypass rules (admin tasks)
-// const db = new PerDB("pk_live_API_KEY", "sk_live_SECRET_KEY");`}
+ // Optional: Use secret key to bypass rules (admin tasks)
+ // const db = new PerDB("pk_live_API_KEY", "sk_live_SECRET_KEY");`}
                    </pre>
                  </div>
                </div>
                
-               <div className="space-y-4 text-sm text-slate-400">
-                 <p>
-                   <strong>Endpoint URL:</strong> You do not need to configure an endpoint. The <code>PerDB</code> class automatically sets the endpoint to <code>{apiEndpoint}</code> internally upon initialization.
-                 </p>
-                 <p>
-                   <strong>Multi-device Login:</strong> Yes! Because PerDB stores your project data in the cloud, your users can log in from any device. As long as they use the same authentication method you've implemented in your Perchance project, their data will sync automatically across all their devices.
-                 </p>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                 <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
+                   <h4 className="text-brand-400 font-bold text-xs uppercase mb-2 flex items-center">
+                     <Shield className="w-3 h-3 mr-2" /> Domain Locking
+                   </h4>
+                   <p className="text-xs text-slate-400">
+                     Protect your API key by restricting it to specific Perchance generators in the dashboard. This prevents others from using your key in their own projects.
+                   </p>
+                 </div>
+                 <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
+                   <h4 className="text-red-400 font-bold text-xs uppercase mb-2 flex items-center">
+                     <Lock className="w-3 h-3 mr-2" /> Secret Admin Key
+                   </h4>
+                   <p className="text-xs text-slate-400">
+                     Use the Secret Key for administrative tasks. It bypasses all security rules and domain locking. <strong>Never expose this key in public code.</strong>
+                   </p>
+                 </div>
                </div>
             </section>
 

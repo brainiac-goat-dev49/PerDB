@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Database, Home as HomeIcon, LayoutDashboard, Book, Code, Menu, X, LogOut, User, Info } from 'lucide-react';
+import { Database, Home as HomeIcon, LayoutDashboard, Book, Code, Menu, X, LogOut, User, Info, MessageSquare } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { Home } from './pages/Home';
@@ -9,6 +9,7 @@ import { Docs } from './pages/Docs';
 import { Playground } from './pages/Playground';
 import { Auth } from './pages/Auth';
 import { About } from './pages/About';
+import { Contact } from './pages/Contact';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const AppContent: React.FC = () => {
@@ -65,6 +66,7 @@ const AppContent: React.FC = () => {
               <NavItem to="/docs" icon={Book} label="Docs" />
               <NavItem to="/playground" icon={Code} label="Playground" />
               <NavItem to="/about" icon={Info} label="About" />
+              <NavItem to="/contact" icon={MessageSquare} label="Contact" />
             </div>
 
             {/* Desktop User Menu */}
@@ -113,6 +115,7 @@ const AppContent: React.FC = () => {
             <NavItem to="/docs" icon={Book} label="Docs" />
             <NavItem to="/playground" icon={Code} label="Playground" />
             <NavItem to="/about" icon={Info} label="About" />
+            <NavItem to="/contact" icon={MessageSquare} label="Contact" />
             
             <div className="border-t border-slate-800 pt-2 mt-2">
                {user ? (
@@ -144,6 +147,7 @@ const AppContent: React.FC = () => {
           <Route path="/playground" element={<Playground />} />
           <Route path="/auth" element={user ? <Navigate to="/dashboard" /> : <Auth />} />
           <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<Contact />} />
         </Routes>
       </main>
 
