@@ -36,6 +36,13 @@ export const About: React.FC = () => {
             When you use the PerDB SDK, your requests are routed through our secure proxy server. This server validates your API key, checks domain restrictions, and evaluates your custom security rules before interacting with the database. This architecture keeps your database credentials safe while giving you full control over your data.
           </p>
         </div>
+
+        <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800 hover:border-brand-500/30 transition-colors">
+          <h3 className="text-xl font-semibold text-white mb-3">The Future of PerDB</h3>
+          <p className="text-slate-400 leading-relaxed">
+            We are constantly working to improve PerDB. Upcoming features include real-time subscriptions (WebSockets), more advanced query capabilities (filtering, sorting), and a more robust rule engine. Our goal is to make PerDB the standard for data persistence in the Perchance ecosystem.
+          </p>
+        </div>
       </div>
 
       <div className="mt-12 p-8 bg-gradient-to-br from-brand-900/20 to-slate-900 rounded-2xl border border-brand-500/20 shadow-xl">

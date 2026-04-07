@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { BookOpen, Code, Terminal, Cpu, Server, Shield, Database, Lock, Copy, Check, Play, ChevronRight } from 'lucide-react';
+import { BookOpen, Code, Terminal, Cpu, Server, Shield, Database, Lock, Copy, Check, Play, ChevronRight, Layers, FileJson } from 'lucide-react';
 import { Card, Button, Badge } from '../components/ui';
 import { generateCodeSnippet } from '../services/aiService';
 
@@ -48,10 +48,10 @@ export const Docs: React.FC = () => {
     </button>
   );
 
-  const apiEndpoint = 'https://perdb.koyeb.app/api';
+  const apiEndpoint = typeof window !== 'undefined' ? window.location.origin + '/api' : 'https://perdb.app/api';
 
   const CLIENT_SDK_CODE = `/**
- * PerDB SDK (v1.0)
+ * PerDB SDK (v1.1)
  * Copy and paste this into your Perchance HTML Panel
  */
 
@@ -107,7 +107,7 @@ class PerDB {
   /**
    * Get documents from a collection
    * @param {string} collection - The collection name
-   * @param {number} limit - Max number of items (default 50)
+   * @param {number} limit - Max number of items (default 50, max 200)
    */
   async get(collection, limit = 50) {
     try {
@@ -209,10 +209,12 @@ class PerDB {
            <div className="sticky top-24">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-4">Quick Start</h3>
               <nav className="space-y-2 border-l border-slate-800 ml-2">
+                <NavLink target="concepts" label="Core Concepts" />
                 <NavLink target="quickstart" label="SDK Setup" />
                 <NavLink target="configuration" label="Configuration" />
                 <NavLink target="writing" label="Writing Data" />
                 <NavLink target="reading" label="Reading Data" />
+                <NavLink target="management" label="Data Management" />
                 <NavLink target="usecases" label="Common Use Cases" />
                 <NavLink target="security" label="Security Rules" />
               </nav>
@@ -247,6 +249,35 @@ class PerDB {
         {/* Main Content */}
         <div className="lg:col-span-3 space-y-16">
           
+          {/* Core Concepts */}
+          <section id="concepts" className="scroll-mt-24">
+            <h2 className="text-3xl font-bold text-white mb-6 flex items-center">
+              <Database className="w-8 h-8 mr-3 text-brand-500" /> Core Concepts
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card className="bg-slate-900/40 border-slate-800">
+                <h3 className="text-lg font-bold text-brand-400 mb-2 flex items-center">
+                  <Layers className="w-5 h-5 mr-2" /> Collections
+                </h3>
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  Think of a <strong>Collection</strong> as a folder or a table. It's a container for your data. 
+                  You might have a collection for <code>scores</code>, another for <code>users</code>, and one for <code>world_state</code>.
+                  Collections are created automatically the first time you add data to them.
+                </p>
+              </Card>
+              <Card className="bg-slate-900/40 border-slate-800">
+                <h3 className="text-lg font-bold text-brand-400 mb-2 flex items-center">
+                  <FileJson className="w-5 h-5 mr-2" /> Entries (Documents)
+                </h3>
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  An <strong>Entry</strong> is a single piece of data inside a collection. It's a standard JSON object.
+                  Every entry automatically gets a unique <code>id</code> and a <code>_created</code> timestamp when saved.
+                  You can store strings, numbers, booleans, arrays, and even nested objects.
+                </p>
+              </Card>
+            </div>
+          </section>
+
           {/* AI Result Section */}
           {aiResponse && (
             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
@@ -404,7 +435,7 @@ class PerDB {
                  </Button>
                </div>
                <p className="text-slate-400 mb-6">
-                 Use <code>db.get(collection, limit)</code> to retrieve the most recent entries.
+                 Use <code>db.get(collection, limit)</code> to retrieve the most recent entries. (Default: 50, Max: 200)
                </p>
                <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
                  <div className="bg-[#0f172a] p-4 overflow-x-auto">
@@ -417,6 +448,32 @@ scores.forEach(s => {
 });`}
                    </pre>
                  </div>
+               </div>
+            </section>
+
+            <div className="w-full h-px bg-slate-800" />
+
+            <section id="management">
+               <div className="flex items-center space-x-3 mb-6">
+                  <Server className="w-6 h-6 text-brand-400" />
+                  <h2 className="text-2xl font-bold text-white">Data Management</h2>
+               </div>
+               <p className="text-slate-400 mb-6">
+                 The PerDB Dashboard provides powerful tools to manage your data without writing code.
+               </p>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
+                     <h4 className="text-slate-200 font-bold text-xs uppercase mb-2">View All</h4>
+                     <p className="text-xs text-slate-500">Open the full collection view to see every entry in a paginated list.</p>
+                  </div>
+                  <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
+                     <h4 className="text-slate-200 font-bold text-xs uppercase mb-2">Search</h4>
+                     <p className="text-xs text-slate-500">Instantly filter through thousands of entries using the built-in search bar.</p>
+                  </div>
+                  <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
+                     <h4 className="text-slate-200 font-bold text-xs uppercase mb-2">Bulk Actions</h4>
+                     <p className="text-xs text-slate-500">Select multiple entries to delete them all at once, saving you time.</p>
+                  </div>
                </div>
             </section>
 
