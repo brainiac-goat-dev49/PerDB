@@ -7,7 +7,8 @@ import { Button, Card, Input, Badge, Modal, ConfirmationModal, AlertModal } from
 
 // --- Sub-components for Data Visualization ---
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE_DEFAULT = 50;
+const ITEMS_PER_PAGE_MAX = 200;
 
 interface CollectionTableProps {
   entries: DBEntry[];
@@ -16,6 +17,8 @@ interface CollectionTableProps {
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onToggleSelectAll: () => void;
+  itemsPerPage?: number;
+  showPagination?: boolean;
 }
 
 const CollectionTable: React.FC<CollectionTableProps> = ({ 
@@ -24,7 +27,9 @@ const CollectionTable: React.FC<CollectionTableProps> = ({
   onDelete,
   selectedIds,
   onToggleSelect,
-  onToggleSelectAll
+  onToggleSelectAll,
+  itemsPerPage = 10,
+  showPagination = true
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -36,9 +41,9 @@ const CollectionTable: React.FC<CollectionTableProps> = ({
     return <div className="p-8 text-center text-slate-500 italic text-sm">No records in this collection. Add data to see it here.</div>;
   }
 
-  const totalPages = Math.ceil(entries.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedEntries = entries.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(entries.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedEntries = entries.slice(startIndex, startIndex + itemsPerPage);
 
   const allKeys = Array.from(new Set(entries.flatMap(entry => Object.keys(entry)))) as string[];
   
@@ -131,10 +136,10 @@ const CollectionTable: React.FC<CollectionTableProps> = ({
         </table>
       </div>
 
-      {totalPages > 1 && (
+      {showPagination && totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3 bg-slate-900/50 border-t border-slate-700/50">
           <div className="text-xs text-slate-400">
-            Showing <span className="font-medium text-slate-200">{startIndex + 1}</span> to <span className="font-medium text-slate-200">{Math.min(startIndex + ITEMS_PER_PAGE, entries.length)}</span> of <span className="font-medium text-slate-200">{entries.length}</span> results
+            Showing <span className="font-medium text-slate-200">{startIndex + 1}</span> to <span className="font-medium text-slate-200">{Math.min(startIndex + itemsPerPage, entries.length)}</span> of <span className="font-medium text-slate-200">{entries.length}</span> results
           </div>
           <div className="flex space-x-2">
             <Button 
@@ -165,6 +170,197 @@ const CollectionTable: React.FC<CollectionTableProps> = ({
   );
 };
 
+interface FullCollectionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  collection: Collection;
+  projectApiKey: string;
+  projectSecretKey?: string;
+  onRefresh: () => void;
+}
+
+const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
+  isOpen,
+  onClose,
+  collection,
+  projectApiKey,
+  projectSecretKey,
+  onRefresh
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [itemsPerPage, setItemsPerPage] = useState(ITEMS_PER_PAGE_DEFAULT);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editingEntry, setEditingEntry] = useState<DBEntry | null>(null);
+  const [editJson, setEditJson] = useState('');
+  const [deletingEntry, setDeletingEntry] = useState<DBEntry | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [alertInfo, setAlertInfo] = useState<{ title: string; message: string } | null>(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+
+  const filteredEntries = collection.entries.filter(entry => {
+    const searchStr = searchTerm.toLowerCase();
+    return Object.values(entry).some(val => 
+      String(val).toLowerCase().includes(searchStr)
+    );
+  });
+
+  const handleToggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.size === filteredEntries.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredEntries.map(e => e.id)));
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingEntry) return;
+    setIsProcessing(true);
+    try {
+      const parsedData = JSON.parse(editJson);
+      const { id, ...dataToUpdate } = parsedData; 
+      await FirebaseService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate, projectSecretKey);
+      setEditingEntry(null);
+      onRefresh();
+    } catch (e: any) {
+      console.error("Save error:", e);
+      setAlertInfo({ title: "Error", message: e.message || "Invalid JSON or Error Saving" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingEntry) return;
+    setIsProcessing(true);
+    try {
+      await FirebaseService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id, projectSecretKey);
+      setDeletingEntry(null);
+      onRefresh();
+    } catch (e: any) {
+      console.error("Delete error:", e);
+      setAlertInfo({ title: "Error", message: e.message || "Error deleting entry" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const confirmBulkDelete = async () => {
+    setBulkDeleteConfirm(false);
+    setIsProcessing(true);
+    try {
+      const ids: string[] = Array.from(selectedIds);
+      await Promise.all(ids.map((id: string) => 
+        FirebaseService.runtimeDelete(projectApiKey, collection.name, id, projectSecretKey)
+      ));
+      setSelectedIds(new Set());
+      onRefresh();
+    } catch (e: any) {
+      console.error("Bulk delete error:", e);
+      setAlertInfo({ title: "Error", message: e.message || "Error during bulk delete" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Collection: ${collection.name}`}>
+      <div className="flex flex-col h-[70vh]">
+        <div className="flex flex-col sm:flex-row gap-4 mb-6 shrink-0">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input 
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-200 focus:ring-1 focus:ring-brand-500 focus:outline-none"
+              placeholder="Search in this collection..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-slate-500 whitespace-nowrap">Show:</label>
+            <select 
+              className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:ring-1 focus:ring-brand-500 focus:outline-none"
+              value={itemsPerPage}
+              onChange={(e) => setItemsPerPage(Number(e.target.value))}
+            >
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200 (Max)</option>
+            </select>
+          </div>
+          {selectedIds.size > 0 && (
+            <Button variant="danger" size="sm" icon={Trash2} onClick={() => setBulkDeleteConfirm(true)}>
+              Delete ({selectedIds.size})
+            </Button>
+          )}
+        </div>
+
+        <div className="flex-1 min-h-0 border border-slate-800 rounded-lg overflow-hidden bg-slate-950/50">
+          <CollectionTable 
+            entries={filteredEntries}
+            onEdit={(entry) => { setEditingEntry(entry); setEditJson(JSON.stringify(entry, null, 2)); }}
+            onDelete={setDeletingEntry}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+            onToggleSelectAll={handleToggleSelectAll}
+            itemsPerPage={itemsPerPage}
+          />
+        </div>
+      </div>
+
+      {/* Nested Modals for Edit/Delete */}
+      <Modal isOpen={!!editingEntry} onClose={() => setEditingEntry(null)} title="Edit Document">
+        <div className="space-y-4">
+           <div className="text-xs text-slate-500 font-mono mb-2">ID: {editingEntry?.id}</div>
+           <textarea
+             className="w-full h-64 bg-slate-950 border border-slate-700 rounded-lg p-3 font-mono text-sm text-slate-300 focus:ring-1 focus:ring-brand-500 focus:outline-none custom-scrollbar"
+             value={editJson}
+             onChange={(e) => setEditJson(e.target.value)}
+           />
+           <div className="flex justify-end gap-2">
+             <Button variant="secondary" onClick={() => setEditingEntry(null)}>Cancel</Button>
+             <Button icon={Save} onClick={handleSaveEdit} isLoading={isProcessing}>Save Changes</Button>
+           </div>
+        </div>
+      </Modal>
+
+      <ConfirmationModal
+        isOpen={!!deletingEntry}
+        onClose={() => setDeletingEntry(null)}
+        onConfirm={confirmDelete}
+        title="Delete Document"
+        message="Are you sure you want to delete this document?"
+        variant="danger"
+        isLoading={isProcessing}
+      />
+
+      <ConfirmationModal
+        isOpen={bulkDeleteConfirm}
+        onClose={() => setBulkDeleteConfirm(false)}
+        onConfirm={confirmBulkDelete}
+        title="Bulk Delete"
+        message={`Are you sure you want to delete ${selectedIds.size} entries?`}
+        variant="danger"
+        isLoading={isProcessing}
+      />
+
+      <AlertModal
+        isOpen={!!alertInfo}
+        onClose={() => setAlertInfo(null)}
+        title={alertInfo?.title || "Notification"}
+        message={alertInfo?.message || ""}
+      />
+    </Modal>
+  );
+};
+
 interface CollectionViewerProps {
   collection: Collection;
   projectApiKey: string;
@@ -187,6 +383,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [alertInfo, setAlertInfo] = useState<{ title: string; message: string } | null>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [isFullViewOpen, setIsFullViewOpen] = useState(false);
 
   const handleToggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -196,10 +393,10 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   };
 
   const handleToggleSelectAll = () => {
-    if (selectedIds.size === collection.entries.length) {
+    if (selectedIds.size === Math.min(10, collection.entries.length)) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(collection.entries.map(e => e.id)));
+      setSelectedIds(new Set(collection.entries.slice(0, 10).map(e => e.id)));
     }
   };
 
@@ -218,8 +415,8 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
       ));
       setSelectedIds(new Set());
       onRefresh();
-    } catch (e) {
-      setAlertInfo({ title: "Error", message: "Error during bulk delete" });
+    } catch (e: any) {
+      setAlertInfo({ title: "Error", message: e.message || "Error during bulk delete" });
     } finally {
       setIsBulkDeleting(false);
     }
@@ -239,8 +436,8 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
       await FirebaseService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate, projectSecretKey);
       setEditingEntry(null);
       onRefresh();
-    } catch (e) {
-      setAlertInfo({ title: "Error", message: "Invalid JSON or Error Saving" });
+    } catch (e: any) {
+      setAlertInfo({ title: "Error", message: e.message || "Invalid JSON or Error Saving" });
     } finally {
       setIsProcessing(false);
     }
@@ -257,8 +454,8 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
       await FirebaseService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id, projectSecretKey);
       setDeletingEntry(null);
       onRefresh();
-    } catch (e) {
-      setAlertInfo({ title: "Error", message: "Error deleting entry" });
+    } catch (e: any) {
+      setAlertInfo({ title: "Error", message: e.message || "Error deleting entry" });
     } finally {
       setIsProcessing(false);
     }
@@ -291,49 +488,76 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
                )}
            </div>
            
-           <div className="flex bg-slate-800 rounded-lg p-1 space-x-1">
-              <button 
-                onClick={() => setViewMode('table')}
-                className={`flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  viewMode === 'table' 
-                    ? 'bg-slate-600 text-white shadow-sm' 
-                    : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
-                }`}
-              >
-                <TableIcon className="w-3.5 h-3.5 mr-1.5" />
-                Table
-              </button>
-              <button 
-                onClick={() => setViewMode('json')}
-                className={`flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  viewMode === 'json' 
-                    ? 'bg-slate-600 text-white shadow-sm' 
-                    : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
-                }`}
-              >
-                <FileJson className="w-3.5 h-3.5 mr-1.5" />
-                JSON
-              </button>
+           <div className="flex items-center gap-3">
+              <Button size="sm" variant="outline" icon={Search} onClick={() => setIsFullViewOpen(true)}>
+                View All / Search
+              </Button>
+              <div className="flex bg-slate-800 rounded-lg p-1 space-x-1">
+                  <button 
+                    onClick={() => setViewMode('table')}
+                    className={`flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      viewMode === 'table' 
+                        ? 'bg-slate-600 text-white shadow-sm' 
+                        : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+                    }`}
+                  >
+                    <TableIcon className="w-3.5 h-3.5 mr-1.5" />
+                    Table
+                  </button>
+                  <button 
+                    onClick={() => setViewMode('json')}
+                    className={`flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      viewMode === 'json' 
+                        ? 'bg-slate-600 text-white shadow-sm' 
+                        : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+                    }`}
+                  >
+                    <FileJson className="w-3.5 h-3.5 mr-1.5" />
+                    JSON
+                  </button>
+              </div>
            </div>
         </div>
         
         {viewMode === 'table' ? (
           <CollectionTable 
-            entries={collection.entries} 
+            entries={collection.entries.slice(0, 10)} 
             onEdit={handleEditClick}
             onDelete={handleDeleteClick}
             selectedIds={selectedIds}
             onToggleSelect={handleToggleSelect}
             onToggleSelectAll={handleToggleSelectAll}
+            showPagination={false}
           />
         ) : (
-          <div className="bg-slate-950 px-4 py-4 overflow-x-auto max-h-[500px] custom-scrollbar">
+          <div className="bg-slate-950 px-4 py-4 overflow-x-auto max-h-[300px] custom-scrollbar">
              <pre className="text-xs text-slate-400 font-mono leading-relaxed">
-               {JSON.stringify(collection.entries, null, 2)}
+               {JSON.stringify(collection.entries.slice(0, 10), null, 2)}
              </pre>
           </div>
         )}
+
+        {collection.entries.length > 10 && (
+          <div className="bg-slate-900/50 p-3 border-t border-slate-700/50 text-center">
+            <button 
+              onClick={() => setIsFullViewOpen(true)}
+              className="text-xs text-brand-400 hover:text-brand-300 font-medium flex items-center justify-center mx-auto gap-2"
+            >
+              <Plus className="w-3 h-3" />
+              Show all {collection.entries.length} entries
+            </button>
+          </div>
+        )}
       </div>
+
+      <FullCollectionModal 
+        isOpen={isFullViewOpen}
+        onClose={() => setIsFullViewOpen(false)}
+        collection={collection}
+        projectApiKey={projectApiKey}
+        projectSecretKey={projectSecretKey}
+        onRefresh={onRefresh}
+      />
 
       <Modal 
         isOpen={!!editingEntry} 
@@ -354,22 +578,15 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
         </div>
       </Modal>
 
-      <Modal 
-        isOpen={!!deletingEntry} 
-        onClose={() => setDeletingEntry(null)} 
+      <ConfirmationModal
+        isOpen={!!deletingEntry}
+        onClose={() => setDeletingEntry(null)}
+        onConfirm={confirmDelete}
         title="Delete Document"
-      >
-        <div className="space-y-4">
-           <p className="text-slate-300">Are you sure you want to delete this document?</p>
-           <div className="bg-slate-950 p-3 rounded border border-slate-800 text-xs font-mono text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap">
-             ID: {deletingEntry?.id}
-           </div>
-           <div className="flex justify-end gap-2 pt-2">
-             <Button variant="secondary" onClick={() => setDeletingEntry(null)}>Cancel</Button>
-             <Button variant="danger" icon={Trash2} onClick={confirmDelete} isLoading={isProcessing}>Delete</Button>
-           </div>
-        </div>
-      </Modal>
+        message="Are you sure you want to delete this document?"
+        variant="danger"
+        isLoading={isProcessing}
+      />
 
       <ConfirmationModal
         isOpen={bulkDeleteConfirm}
@@ -378,7 +595,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
         title="Bulk Delete"
         message={`Are you sure you want to delete ${selectedIds.size} entries?`}
         variant="danger"
-        confirmText="Delete All"
+        isLoading={isProcessing}
       />
 
       <AlertModal

@@ -101,7 +101,7 @@ async function startServer() {
       const projectData = projectDoc.data();
       
       // Bypass rules if secret key matches
-      const isMasterRequest = secretKey === projectData.secretKey;
+      const isMasterRequest = !!(secretKey && secretKey === projectData.secretKey);
 
       // --- Domain Restriction (Enforced per project) ---
       const origin = req.headers.origin || req.headers.referer || '';
@@ -117,15 +117,22 @@ async function startServer() {
           : allowedOrigins.some((allowed: string) => origin.includes(allowed));
 
         if (!isAllowed) {
+          console.warn(`Domain Restricted: Origin ${origin} not in ${allowedOrigins.join(', ')}`);
           return res.status(403).json({ 
             error: `Forbidden: This API Key is locked to specific domains. Current origin: ${origin || 'unknown'}` 
           });
         }
       }
       
-      const projectRules = typeof projectData.rules === 'string' 
-        ? JSON.parse(projectData.rules) 
-        : (projectData.rules || {});
+      let projectRules = {};
+      try {
+        projectRules = typeof projectData.rules === 'string' 
+          ? JSON.parse(projectData.rules) 
+          : (projectData.rules || {});
+      } catch (e) {
+        console.error("Rules Parse Error:", e);
+        projectRules = {};
+      }
 
       const collectionName = req.query.collection as string || 'default';
       const docPath = `projects/${projectId}/collections/${collectionName}/docs`;
@@ -134,13 +141,14 @@ async function startServer() {
       const evaluateRule = (ruleStr: any, context: any) => {
         if (ruleStr === 'true' || ruleStr === true) return true;
         if (ruleStr === 'false' || ruleStr === false) return false;
-        if (!ruleStr) return false;
+        if (!ruleStr) return true; // Default to allow if no rule for this collection
+
         try {
           const { auth, newData, data } = context;
           const fn = new Function('auth', 'newData', 'data', `return ${ruleStr};`);
           return fn(auth, newData, data);
         } catch (e) {
-          console.error("Rule Evaluation Error:", e);
+          console.error("Rule Evaluation Error:", e, "Rule:", ruleStr);
           return false;
         }
       };

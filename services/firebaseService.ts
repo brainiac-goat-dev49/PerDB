@@ -141,7 +141,7 @@ export const FirebaseService = {
   // --- Runtime API (Uses the Server API to bypass Firestore rules) ---
   
   runtimeAdd: async (apiKey: string, collectionName: string, data: any): Promise<any> => {
-    const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}`, {
+    const res = await fetch(`/api?collection=${collectionName}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -155,7 +155,7 @@ export const FirebaseService = {
   },
 
   runtimeGet: async (apiKey: string, collectionName: string): Promise<DBEntry[]> => {
-    const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}`, {
+    const res = await fetch(`/api?collection=${collectionName}`, {
       method: 'GET',
       headers: {
         'x-api-key': apiKey
@@ -167,7 +167,7 @@ export const FirebaseService = {
   },
 
   runtimeUpdate: async (apiKey: string, collectionName: string, docId: string, data: any, secretKey?: string): Promise<void> => {
-    const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}&id=${docId}`, {
+    const res = await fetch(`/api?collection=${collectionName}&id=${docId}`, {
       method: 'PUT',
       headers: { 
         'Content-Type': 'application/json',
@@ -181,7 +181,7 @@ export const FirebaseService = {
   },
 
   runtimeDelete: async (apiKey: string, collectionName: string, docId: string, secretKey?: string): Promise<void> => {
-    const res = await fetch(`https://perdb.koyeb.app/api?collection=${collectionName}&id=${docId}`, {
+    const res = await fetch(`/api?collection=${collectionName}&id=${docId}`, {
       method: 'DELETE',
       headers: {
         'x-api-key': apiKey,
