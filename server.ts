@@ -377,8 +377,8 @@ async function startServer() {
     
     app.use(express.static(distPath));
     
-    // Express 5 wildcard
-    app.get('*', (req, res) => {
+    // Express 5 requires a named parameter for wildcards
+    app.get('*all', (req, res) => {
       console.log(`Serving index.html for request: ${req.url}`);
       res.sendFile(indexPath, (err) => {
         if (err) {
