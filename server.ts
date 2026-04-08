@@ -3,6 +3,7 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -369,21 +370,56 @@ async function startServer() {
       console.error("Failed to load Vite:", e);
     }
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    const indexPath = path.join(distPath, 'index.html');
+    const distPath = path.resolve(__dirname, 'dist');
+    const indexPath = path.resolve(distPath, 'index.html');
     
     console.log(`Production mode: Serving static files from ${distPath}`);
-    console.log(`Index path: ${indexPath}`);
     
-    app.use(express.static(distPath));
+    if (!fs.existsSync(distPath)) {
+      console.error(`CRITICAL ERROR: dist directory not found at ${distPath}`);
+    } else {
+      const files = fs.readdirSync(distPath);
+      console.log(`Files in dist: ${files.join(', ')}`);
+      if (fs.existsSync(path.join(distPath, 'assets'))) {
+        const assets = fs.readdirSync(path.join(distPath, 'assets'));
+        console.log(`Files in dist/assets: ${assets.join(', ')}`);
+      }
+    }
+
+    if (!fs.existsSync(indexPath)) {
+      console.error(`CRITICAL ERROR: index.html not found at ${indexPath}`);
+    }
+    
+    // Request logger for debugging production issues
+    app.use((req, res, next) => {
+      if (!req.url.startsWith('/api')) {
+        console.log(`[Static] Request: ${req.method} ${req.url}`);
+      }
+      next();
+    });
+
+    app.use(express.static(distPath, {
+      index: false,
+      maxAge: '1d'
+    }));
     
     // Express 5 requires a named parameter for wildcards
-    app.get('*all', (req, res) => {
-      console.log(`Serving index.html for request: ${req.url}`);
+    app.get('*all', (req, res, next) => {
+      // Skip API routes (should be handled above)
+      if (req.path.startsWith('/api')) return next();
+      
+      // If it's a request for a file that doesn't exist in dist, don't serve index.html
+      // This prevents serving index.html for missing JS/CSS files which causes blank screens
+      if (req.path.includes('.') && !req.path.endsWith('.html')) {
+        console.log(`[Static] 404 for file: ${req.path}`);
+        return res.status(404).end();
+      }
+
+      console.log(`[Static] Serving index.html for SPA route: ${req.url}`);
       res.sendFile(indexPath, (err) => {
         if (err) {
-          console.error(`Failed to send index.html from ${indexPath}:`, err);
-          res.status(500).send("Internal Server Error: Missing build artifacts. Please ensure 'npm run build' was successful and the 'dist' folder exists.");
+          console.error(`[Static] Failed to send index.html:`, err);
+          res.status(500).send("Internal Server Error: Missing build artifacts.");
         }
       });
     });
