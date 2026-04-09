@@ -188,17 +188,21 @@ app.all('*all', async (req, res) => {
       return res.status(200).json(data);
     }
 
-    // PUT: Update
-    if (req.method === 'PUT') {
-      const docId = (req.query.id as string) || req.body.id;
-      if (!docId) return res.status(400).json({ error: 'Missing Document ID' });
+      // --- PUT: Update ---
+      if (req.method === 'PUT') {
+        const docId = (req.query.id as string || req.body.id || '').trim();
+        if (!docId) return res.status(400).json({ error: 'Missing Document ID' });
 
-      const payload = req.body;
-      const writeRule = projectRules[collectionName]?.['.write'];
-      
-      const docRef = firestore.collection(docPath).doc(docId);
-      const docSnap = await docRef.get();
-      if (!docSnap.exists) return res.status(404).json({ error: 'Document not found' });
+        const payload = req.body;
+        const writeRule = projectRules[collectionName]?.['.write'];
+        
+        const docRef = firestore.collection(docPath).doc(docId);
+        console.log(`[API] PUT Request: Path=${docPath}, ID=${docId}`);
+        const docSnap = await docRef.get();
+        if (!docSnap.exists) {
+          console.warn(`[API] PUT Document not found: ${docPath}/${docId}`);
+          return res.status(404).json({ error: 'Document not found' });
+        }
 
       const isAllowed = evaluateRule(writeRule, { 
         auth: authContext, 
@@ -218,15 +222,19 @@ app.all('*all', async (req, res) => {
       return res.status(200).json({ success: true });
     }
 
-    // DELETE: Delete
-    if (req.method === 'DELETE') {
-      const docId = req.query.id as string;
-      if (!docId) return res.status(400).json({ error: 'Missing Document ID' });
+      // --- DELETE: Delete ---
+      if (req.method === 'DELETE') {
+        const docId = (req.query.id as string || '').trim();
+        if (!docId) return res.status(400).json({ error: 'Missing Document ID' });
 
-      const writeRule = projectRules[collectionName]?.['.write'];
-      const docRef = firestore.collection(docPath).doc(docId);
-      const docSnap = await docRef.get();
-      if (!docSnap.exists) return res.status(404).json({ error: 'Document not found' });
+        const writeRule = projectRules[collectionName]?.['.write'];
+        const docRef = firestore.collection(docPath).doc(docId);
+        console.log(`[API] DELETE Request: Path=${docPath}, ID=${docId}`);
+        const docSnap = await docRef.get();
+        if (!docSnap.exists) {
+          console.warn(`[API] DELETE Document not found: ${docPath}/${docId}`);
+          return res.status(404).json({ error: 'Document not found' });
+        }
 
       const isAllowed = evaluateRule(writeRule, { 
         auth: authContext, 

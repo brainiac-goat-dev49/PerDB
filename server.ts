@@ -59,6 +59,8 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT || 3000;
   console.log(`Target Port: ${PORT}`);
+  console.log(`__dirname: ${__dirname}`);
+  console.log(`distPath: ${path.resolve(__dirname, 'dist')}`);
 
   // Middleware
   app.use(cors({ origin: true }));
@@ -284,7 +286,7 @@ async function startServer() {
 
       // --- PUT: Update ---
       if (req.method === 'PUT') {
-        const docId = req.query.id as string || req.body.id;
+        const docId = (req.query.id as string || req.body.id || '').trim();
         if (!docId) return res.status(400).json({ error: 'Missing Document ID' });
 
         const payload = req.body;
@@ -292,8 +294,12 @@ async function startServer() {
         
         // Fetch current data for rule evaluation
         const docRef = firestore.collection(docPath).doc(docId);
+        console.log(`[API] PUT Request: Path=${docPath}, ID=${docId}`);
         const docSnap = await docRef.get();
-        if (!docSnap.exists) return res.status(404).json({ error: 'Document not found' });
+        if (!docSnap.exists) {
+          console.warn(`[API] PUT Document not found: ${docPath}/${docId}`);
+          return res.status(404).json({ error: 'Document not found' });
+        }
 
         const isAllowed = isMasterRequest || evaluateRule(writeRule, { 
           auth: authContext, 
@@ -320,13 +326,17 @@ async function startServer() {
 
       // --- DELETE: Delete ---
       if (req.method === 'DELETE') {
-        const docId = req.query.id as string;
+        const docId = (req.query.id as string || '').trim();
         if (!docId) return res.status(400).json({ error: 'Missing Document ID' });
 
         const writeRule = projectRules[collectionName]?.['.write'];
         const docRef = firestore.collection(docPath).doc(docId);
+        console.log(`[API] DELETE Request: Path=${docPath}, ID=${docId}`);
         const docSnap = await docRef.get();
-        if (!docSnap.exists) return res.status(404).json({ error: 'Document not found' });
+        if (!docSnap.exists) {
+          console.warn(`[API] DELETE Document not found: ${docPath}/${docId}`);
+          return res.status(404).json({ error: 'Document not found' });
+        }
 
         const isAllowed = isMasterRequest || evaluateRule(writeRule, { 
           auth: authContext, 

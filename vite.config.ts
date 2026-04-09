@@ -12,7 +12,20 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.NODE_ENV': JSON.stringify(mode),
+        'global': 'window',
+      },
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'vendor': ['react', 'react-dom', 'react-router-dom'],
+              'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+              'ui': ['lucide-react'],
+            }
+          }
+        }
       },
       resolve: {
         alias: {
