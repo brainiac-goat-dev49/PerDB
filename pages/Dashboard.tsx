@@ -901,9 +901,23 @@ export const Dashboard: React.FC = () => {
           <h1 className="text-3xl font-bold text-white tracking-tight">Dashboard</h1>
           <p className="text-slate-400 mt-1">Manage your Perchance cloud databases.</p>
         </div>
-        <Button onClick={() => setIsCreating(!isCreating)} icon={Plus}>
-          New Project
-        </Button>
+        <div className="flex flex-col items-end gap-2">
+          <Button onClick={() => setIsCreating(!isCreating)} icon={Plus} disabled={projects.length >= 5 && !isCreating}>
+            New Project
+          </Button>
+          <div className="w-48">
+            <div className="flex justify-between text-[10px] uppercase font-bold tracking-wider mb-1">
+              <span className="text-slate-500">Project Limit</span>
+              <span className={projects.length >= 5 ? 'text-red-400' : 'text-brand-400'}>{projects.length} / 5</span>
+            </div>
+            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
+              <div 
+                className={`h-full transition-all duration-500 ${projects.length >= 5 ? 'bg-red-500' : 'bg-brand-500'}`}
+                style={{ width: `${(projects.length / 5) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {isCreating && (
@@ -951,7 +965,9 @@ export const Dashboard: React.FC = () => {
               >
                 <div className="flex justify-between items-start">
                   <h3 className={`font-semibold ${selectedProject?.id === project.id ? 'text-brand-300' : 'text-slate-100'}`}>{project.name}</h3>
-                  <Badge variant={selectedProject?.id === project.id ? 'info' : 'info'}>{project.collections.length} Colls</Badge>
+                  <Badge variant={selectedProject?.id === project.id ? 'info' : 'info'}>
+                    {(project.collectionList?.length || 0)} Colls
+                  </Badge>
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-xs text-slate-500 font-mono">ID: {project.id}</span>

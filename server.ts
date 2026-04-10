@@ -12,6 +12,72 @@ const __dirname = path.dirname(__filename);
 // Firebase Admin Singleton
 let db: admin.firestore.Firestore | null = null;
 
+/**
+ * Safely parses the Firebase Service Account JSON string.
+ * Handles common issues like literal newlines, wrapping quotes, missing commas, and smart quotes.
+ */
+function parseServiceAccount(saEnv: string) {
+  let cleaned = saEnv.trim();
+  
+  // 1. Handle smart quotes (common copy-paste artifact)
+  cleaned = cleaned.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+
+  // 2. Handle wrapping quotes (sometimes env vars are stored as "{"key": "val"}")
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+
+  // Attempt 1: Standard parse
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {}
+
+  // Attempt 2: Handle literal newlines
+  try {
+    const fixed = cleaned.replace(/\n/g, '\\n');
+    return JSON.parse(fixed);
+  } catch (e) {}
+
+  // Attempt 3: Aggressive fix for missing commas between properties
+  // This regex finds "value" "key": and inserts a comma
+  try {
+    const withCommas = cleaned
+      .replace(/("(?:\\.|[^"])*")\s*("(?:\\.|[^"])*"\s*:)/g, '$1, $2')
+      .replace(/(\d+|true|false|null)\s*("(?:\\.|[^"])*"\s*:)/g, '$1, $2');
+    return JSON.parse(withCommas.replace(/\n/g, '\\n'));
+  } catch (e) {}
+
+  // Attempt 4: Handle escaped newlines that were double-escaped
+  try {
+    const fixed = cleaned.replace(/\\\\n/g, '\\n');
+    return JSON.parse(fixed);
+  } catch (e) {}
+
+  // If all fails, throw the original error with detailed context
+  try {
+    JSON.parse(cleaned);
+  } catch (e: any) {
+    const posMatch = e.message.match(/at position (\d+)/);
+    const pos = posMatch ? parseInt(posMatch[1]) : -1;
+    
+    if (pos !== -1) {
+      const start = Math.max(0, pos - 50);
+      const end = Math.min(cleaned.length, pos + 50);
+      const context = cleaned.substring(start, end);
+      const pointer = " ".repeat(Math.min(pos, 50)) + "^";
+      console.error(`\n--- JSON Parse Error Details ---`);
+      console.error(`Error: ${e.message}`);
+      console.error(`Position: ${pos}`);
+      console.error(`Context: ...${context}...`);
+      console.error(`          ${pointer}`);
+      console.error(`Raw Char at position: ${JSON.stringify(cleaned[pos])}`);
+      console.error(`Hint: Check for missing commas, extra quotes, or unescaped newlines around this position.`);
+      console.error(`--------------------------------\n`);
+    }
+    throw e;
+  }
+}
+
 function getDb() {
   if (db) return db;
 
@@ -23,19 +89,7 @@ function getDb() {
         return null;
       }
 
-      // Robust JSON parsing check
-      let serviceAccount;
-      if (saEnv.trim().startsWith('{')) {
-        try {
-          serviceAccount = JSON.parse(saEnv);
-        } catch (e) {
-          console.error("FIREBASE_SERVICE_ACCOUNT is not valid JSON:", e);
-          return null;
-        }
-      } else {
-        console.error("FIREBASE_SERVICE_ACCOUNT does not appear to be a JSON string (it should start with '{'). It currently starts with:", saEnv.substring(0, 20));
-        return null;
-      }
+      const serviceAccount = parseServiceAccount(saEnv);
 
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
@@ -111,6 +165,103 @@ async function startServer() {
   // API routes go here
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", env: process.env.NODE_ENV });
+  });
+
+  // --- Admin API ---
+  app.get("/api/admin/users", async (req, res) => {
+    try {
+      const firestore = getDb();
+      if (!firestore) return res.status(500).json({ error: 'Firebase Admin not initialized' });
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+      
+      const token = authHeader.split('Bearer ')[1];
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      
+      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+        return res.status(403).json({ error: 'Forbidden: Admin access only' });
+      }
+
+      const snapshot = await firestore.collection('users').orderBy('lastLogin', 'desc').get();
+      const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      res.json(users);
+    } catch (error) {
+      console.error("Admin Users Error:", error);
+      res.status(500).json({ error: 'Failed to fetch users' });
+    }
+  });
+
+  app.get("/api/admin/feedback", async (req, res) => {
+    try {
+      const firestore = getDb();
+      if (!firestore) return res.status(500).json({ error: 'Firebase Admin not initialized' });
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+      
+      const token = authHeader.split('Bearer ')[1];
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      
+      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+        return res.status(403).json({ error: 'Forbidden: Admin access only' });
+      }
+
+      const snapshot = await firestore.collection('feedback').orderBy('timestamp', 'desc').get();
+      const feedback = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      res.json(feedback);
+    } catch (error) {
+      console.error("Admin Feedback Error:", error);
+      res.status(500).json({ error: 'Failed to fetch feedback' });
+    }
+  });
+
+  app.post("/api/admin/update-user", async (req, res) => {
+    try {
+      const firestore = getDb();
+      if (!firestore) return res.status(500).json({ error: 'Firebase Admin not initialized' });
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+      
+      const token = authHeader.split('Bearer ')[1];
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      
+      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+        return res.status(403).json({ error: 'Forbidden: Admin access only' });
+      }
+
+      const { userId, updates } = req.body;
+      await firestore.collection('users').doc(userId).update(updates);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Admin Update User Error:", error);
+      res.status(500).json({ error: 'Failed to update user' });
+    }
+  });
+
+  app.delete("/api/admin/feedback/:id", async (req, res) => {
+    try {
+      const firestore = getDb();
+      if (!firestore) return res.status(500).json({ error: 'Firebase Admin not initialized' });
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+      
+      const token = authHeader.split('Bearer ')[1];
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      
+      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+        return res.status(403).json({ error: 'Forbidden: Admin access only' });
+      }
+
+      const { id } = req.params;
+      await firestore.collection('feedback').doc(id).delete();
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Admin Delete Feedback Error:", error);
+      res.status(500).json({ error: 'Failed to delete feedback' });
+    }
   });
 
   // --- PerDB API v1 ---

@@ -11,6 +11,72 @@ app.use(express.json());
 // Initialize Firebase Admin
 let db: admin.firestore.Firestore | null = null;
 
+/**
+ * Safely parses the Firebase Service Account JSON string.
+ * Handles common issues like literal newlines, wrapping quotes, missing commas, and smart quotes.
+ */
+function parseServiceAccount(saEnv: string) {
+  let cleaned = saEnv.trim();
+  
+  // 1. Handle smart quotes (common copy-paste artifact)
+  cleaned = cleaned.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+
+  // 2. Handle wrapping quotes (sometimes env vars are stored as "{"key": "val"}")
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+
+  // Attempt 1: Standard parse
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {}
+
+  // Attempt 2: Handle literal newlines
+  try {
+    const fixed = cleaned.replace(/\n/g, '\\n');
+    return JSON.parse(fixed);
+  } catch (e) {}
+
+  // Attempt 3: Aggressive fix for missing commas between properties
+  // This regex finds "value" "key": and inserts a comma
+  try {
+    const withCommas = cleaned
+      .replace(/("(?:\\.|[^"])*")\s*("(?:\\.|[^"])*"\s*:)/g, '$1, $2')
+      .replace(/(\d+|true|false|null)\s*("(?:\\.|[^"])*"\s*:)/g, '$1, $2');
+    return JSON.parse(withCommas.replace(/\n/g, '\\n'));
+  } catch (e) {}
+
+  // Attempt 4: Handle escaped newlines that were double-escaped
+  try {
+    const fixed = cleaned.replace(/\\\\n/g, '\\n');
+    return JSON.parse(fixed);
+  } catch (e) {}
+
+  // If all fails, throw the original error with detailed context
+  try {
+    JSON.parse(cleaned);
+  } catch (e: any) {
+    const posMatch = e.message.match(/at position (\d+)/);
+    const pos = posMatch ? parseInt(posMatch[1]) : -1;
+    
+    if (pos !== -1) {
+      const start = Math.max(0, pos - 50);
+      const end = Math.min(cleaned.length, pos + 50);
+      const context = cleaned.substring(start, end);
+      const pointer = " ".repeat(Math.min(pos, 50)) + "^";
+      console.error(`\n--- JSON Parse Error Details ---`);
+      console.error(`Error: ${e.message}`);
+      console.error(`Position: ${pos}`);
+      console.error(`Context: ...${context}...`);
+      console.error(`          ${pointer}`);
+      console.error(`Raw Char at position: ${JSON.stringify(cleaned[pos])}`);
+      console.error(`Hint: Check for missing commas, extra quotes, or unescaped newlines around this position.`);
+      console.error(`--------------------------------\n`);
+    }
+    throw e;
+  }
+}
+
 function getDb() {
   if (db) return db;
 
@@ -22,19 +88,7 @@ function getDb() {
         return null;
       }
 
-      // Robust JSON parsing check
-      let serviceAccount;
-      if (saEnv.trim().startsWith('{')) {
-        try {
-          serviceAccount = JSON.parse(saEnv);
-        } catch (e) {
-          console.error("FIREBASE_SERVICE_ACCOUNT is not valid JSON:", e);
-          return null;
-        }
-      } else {
-        console.error("FIREBASE_SERVICE_ACCOUNT does not appear to be a JSON string (it should start with '{'). It currently starts with:", saEnv.substring(0, 20));
-        return null;
-      }
+      const serviceAccount = parseServiceAccount(saEnv);
 
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)

@@ -1,8 +1,10 @@
 {
-  "apiKey": "AIzaSyC-xMfx2NmJGXxEKGIttsND8Dlyr-kSkpQ",
-  "authDomain": "sample-firebase-ai-app-7946d.firebaseapp.com",
-  "projectId": "sample-firebase-ai-app-7946d",
-  "storageBucket": "sample-firebase-ai-app-7946d.firebasestorage.app",
-  "messagingSenderId": "889021229266",
-  "appId": "1:889021229266:web:bebf57996e90939c70650b"
+  "projectId": "public-comment-plug-in",
+  "appId": "1:494501397003:web:ed19278a70468df2963d0e",
+  "apiKey": "AIzaSyDQ3OvX5rtkT--SAE6XTl4ji4de-cksZBI",
+  "authDomain": "public-comment-plug-in.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-bfc25dc6-c2da-4a27-b17a-0c67d3122c11",
+  "storageBucket": "public-comment-plug-in.firebasestorage.app",
+  "messagingSenderId": "494501397003",
+  "measurementId": ""
 }

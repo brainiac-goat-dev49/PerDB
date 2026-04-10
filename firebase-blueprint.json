@@ -23,12 +23,45 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "name", "apiKey"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A PerDB user profile.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string", "format": "uri" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "isBanned": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Feedback": {
+      "title": "Feedback",
+      "description": "User feedback or contact messages.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
     "projects": {
       "schema": "Project",
       "description": "Collection of PerDB projects."
+    },
+    "users": {
+      "schema": "User",
+      "description": "Collection of user profiles."
+    },
+    "feedback": {
+      "schema": "Feedback",
+      "description": "Collection of feedback messages."
     }
   }
 }

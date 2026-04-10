@@ -27,8 +27,7 @@ export const Admin: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const checkAdmin = () => {
-      const user = auth.currentUser;
+    const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user && user.email === 'brainiacgoatdev@gmail.com') {
         setIsAdmin(true);
         loadData();
@@ -36,9 +35,9 @@ export const Admin: React.FC = () => {
         setIsAdmin(false);
         setLoading(false);
       }
-    };
+    });
 
-    checkAdmin();
+    return () => unsubscribe();
   }, []);
 
   const loadData = async () => {

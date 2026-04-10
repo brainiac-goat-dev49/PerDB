@@ -155,13 +155,35 @@ export const FirebaseService = {
   },
 
   getAllFeedback: async (): Promise<any[]> => {
-    const q = query(collection(db, 'feedback'), orderBy('timestamp', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const user = auth.currentUser;
+    if (!user) throw new Error("Unauthorized");
+    const token = await user.getIdToken();
+
+    const res = await fetch('/api/admin/feedback', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch feedback');
+    }
+    return await res.json();
   },
 
   deleteFeedback: async (id: string): Promise<void> => {
-    await deleteDoc(doc(db, 'feedback', id));
+    const user = auth.currentUser;
+    if (!user) throw new Error("Unauthorized");
+    const token = await user.getIdToken();
+
+    const res = await fetch(`/api/admin/feedback/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to delete feedback');
+    }
   },
 
   // --- User Management ---
@@ -197,13 +219,39 @@ export const FirebaseService = {
   },
 
   getAllUsers: async (): Promise<any[]> => {
-    const q = query(collection(db, 'users'), orderBy('lastLogin', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const user = auth.currentUser;
+    if (!user) throw new Error("Unauthorized");
+    const token = await user.getIdToken();
+
+    const res = await fetch('/api/admin/users', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch users');
+    }
+    return await res.json();
   },
 
   updateUserStatus: async (userId: string, isBanned: boolean): Promise<void> => {
-    await updateDoc(doc(db, 'users', userId), { isBanned });
+    const user = auth.currentUser;
+    if (!user) throw new Error("Unauthorized");
+    const token = await user.getIdToken();
+
+    const res = await fetch('/api/admin/update-user', {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ userId, updates: { isBanned } })
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to update user status');
+    }
   },
 
   deleteUser: async (userId: string): Promise<void> => {

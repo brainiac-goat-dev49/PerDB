@@ -51,19 +51,42 @@ export const Docs: React.FC = () => {
   const apiEndpoint = typeof window !== 'undefined' ? window.location.origin + '/api' : 'https://perdb.app/api';
 
   const CLIENT_SDK_CODE = `/**
- * PerDB SDK (v1.1)
+ * PerDB SDK (v1.2)
  * Copy and paste this into your Perchance HTML Panel
  */
 
 class PerDB {
-  constructor(apiKey, secretKey = null) {
+  constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
-    this.secretKey = secretKey;
+    this.secretKey = options.secretKey || null;
+    this.showAlerts = options.showAlerts !== false; // Default to true
     this.auth = null;
     // The Live PerDB Platform Endpoint
     this.endpoint = "${apiEndpoint}"; 
     this.cache = new Map();
     this.CACHE_TTL = 2000; // 2 seconds client-side throttle
+  }
+
+  /**
+   * Internal helper to show alerts
+   */
+  _alert(msg) {
+    console.error("[PerDB Error]", msg);
+    if (!this.showAlerts) return;
+    
+    const id = 'perdb-alert-' + Date.now();
+    const div = document.createElement('div');
+    div.id = id;
+    div.style.cssText = "position:fixed;top:20px;right:20px;background:#ef4444;color:white;padding:12px 20px;border-radius:8px;font-family:sans-serif;font-size:14px;z-index:99999;box-shadow:0 10px 15px -3px rgba(0,0,0,0.3);border-left:4px solid #7f1d1d;max-width:300px;cursor:pointer;animation:perdb-fade-in 0.3s ease-out;";
+    div.innerHTML = \`<strong>PerDB Error:</strong><br/>\${msg}<br/><small style="opacity:0.7;font-size:10px;display:block;margin-top:4px">Click to dismiss</small>\`;
+    
+    const style = document.createElement('style');
+    style.innerHTML = "@keyframes perdb-fade-in { from { opacity:0; transform:translateY(-20px); } to { opacity:1; transform:translateY(0); } }";
+    document.head.appendChild(style);
+    
+    div.onclick = () => div.remove();
+    document.body.appendChild(div);
+    setTimeout(() => { if(div.parentNode) div.remove(); }, 8000);
   }
 
   /**
@@ -99,9 +122,12 @@ class PerDB {
         headers: headers,
         body: JSON.stringify(data)
       });
-      return await res.json();
+      
+      const result = await res.json();
+      if (result.error) this._alert(result.error);
+      return result;
     } catch (err) {
-      console.error("PerDB Write Error:", err);
+      this._alert(err.message);
       return { error: err.message };
     }
   }
@@ -132,11 +158,17 @@ class PerDB {
         method: "GET",
         headers: headers
       });
+      
       const data = await res.json();
+      if (data.error) {
+        this._alert(data.error);
+        return [];
+      }
+      
       this.cache.set(cacheKey, { data, timestamp: Date.now() });
       return data;
     } catch (err) {
-      console.error("PerDB Read Error:", err);
+      this._alert(err.message);
       return [];
     }
   }
@@ -167,9 +199,12 @@ class PerDB {
         headers: headers,
         body: JSON.stringify(data)
       });
-      return await res.json();
+      
+      const result = await res.json();
+      if (result.error) this._alert(result.error);
+      return result;
     } catch (err) {
-      console.error("PerDB Update Error:", err);
+      this._alert(err.message);
       return { error: err.message };
     }
   }
@@ -194,9 +229,12 @@ class PerDB {
         method: "DELETE",
         headers: headers
       });
-      return await res.json();
+      
+      const result = await res.json();
+      if (result.error) this._alert(result.error);
+      return result;
     } catch (err) {
-      console.error("PerDB Delete Error:", err);
+      this._alert(err.message);
       return { error: err.message };
     }
   }
@@ -370,8 +408,12 @@ class PerDB {
                  <div className="bg-[#0f172a] p-4 overflow-x-auto">
                    <pre className="font-mono text-sm leading-relaxed text-slate-300">
                      {`const db = new PerDB("pk_live_YOUR_API_KEY_HERE");
- // Optional: Use secret key to bypass rules (admin tasks)
- // const db = new PerDB("pk_live_API_KEY", "sk_live_SECRET_KEY");`}
+
+// Optional: Disable visual alerts
+// const db = new PerDB("pk_live_API_KEY", { showAlerts: false });
+
+// Optional: Use secret key (Admin only)
+// const db = new PerDB("pk_live_API_KEY", { secretKey: "sk_live_..." });`}
                    </pre>
                  </div>
                </div>
@@ -530,6 +572,10 @@ scores.forEach(s => {
                       <li className="flex justify-between">
                         <span>Read Cache TTL</span>
                         <span className="text-brand-400 font-mono">30 seconds</span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span>Error Alerting</span>
+                        <span className="text-brand-400 font-mono">Enabled</span>
                       </li>
                     </ul>
                   </Card>
