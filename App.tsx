@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Database, Home as HomeIcon, LayoutDashboard, Book, Code, Menu, X, LogOut, User, Info, MessageSquare } from 'lucide-react';
+import { Database, Home as HomeIcon, LayoutDashboard, Book, Code, Menu, X, LogOut, User, Info, MessageSquare, Shield } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { Home } from './pages/Home';
@@ -10,7 +10,11 @@ import { Playground } from './pages/Playground';
 import { Auth } from './pages/Auth';
 import { About } from './pages/About';
 import { Contact } from './pages/Contact';
+import { Admin } from './pages/Admin';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { FirebaseService } from './services/firebaseService';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
 const AppContent: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -19,11 +23,31 @@ const AppContent: React.FC = () => {
   const location = useLocation();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    let userUnsubscribe: (() => void) | null = null;
+    
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        // Sync user to Firestore
+        await FirebaseService.syncUser();
+        
+        // Listen for user document changes (to handle real-time banning)
+        userUnsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+          if (docSnap.exists() && docSnap.data().isBanned) {
+            signOut(auth);
+            alert("Your account has been suspended. Please contact support if you believe this is an error.");
+            navigate('/');
+          }
+        });
+      } else {
+        if (userUnsubscribe) userUnsubscribe();
+      }
       setUser(currentUser);
     });
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      unsubscribe();
+      if (userUnsubscribe) userUnsubscribe();
+    };
+  }, [navigate]);
 
   const handleSignOut = async () => {
     await signOut(auth);
@@ -67,6 +91,9 @@ const AppContent: React.FC = () => {
               <NavItem to="/playground" icon={Code} label="Playground" />
               <NavItem to="/about" icon={Info} label="About" />
               <NavItem to="/contact" icon={MessageSquare} label="Contact" />
+              {user?.email === 'brainiacgoatdev@gmail.com' && (
+                <NavItem to="/admin" icon={Shield} label="Admin" />
+              )}
             </div>
 
             {/* Desktop User Menu */}
@@ -116,6 +143,9 @@ const AppContent: React.FC = () => {
             <NavItem to="/playground" icon={Code} label="Playground" />
             <NavItem to="/about" icon={Info} label="About" />
             <NavItem to="/contact" icon={MessageSquare} label="Contact" />
+            {user?.email === 'brainiacgoatdev@gmail.com' && (
+              <NavItem to="/admin" icon={Shield} label="Admin" />
+            )}
             
             <div className="border-t border-slate-800 pt-2 mt-2">
                {user ? (
@@ -148,6 +178,7 @@ const AppContent: React.FC = () => {
           <Route path="/auth" element={user ? <Navigate to="/dashboard" /> : <Auth />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/admin" element={user?.email === 'brainiacgoatdev@gmail.com' ? <Admin /> : <Navigate to="/" />} />
         </Routes>
       </main>
 

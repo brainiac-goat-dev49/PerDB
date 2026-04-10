@@ -6,6 +6,7 @@ import {
   query, 
   where, 
   doc, 
+  setDoc,
   deleteDoc, 
   updateDoc, 
   getDoc,
@@ -81,6 +82,12 @@ export const FirebaseService = {
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
 
+    // Check project limit (Max 5)
+    const existingProjects = await FirebaseService.getAllProjects();
+    if (existingProjects.length >= 5) {
+      throw new Error("Project Limit Reached: You can only have up to 5 projects. Please delete an existing project to create a new one.");
+    }
+
     const newProject = {
       ownerId: user.uid,
       name,
@@ -145,6 +152,62 @@ export const FirebaseService = {
 
   saveFeedback: async (feedback: { name: string; email: string; message: string; timestamp: string }): Promise<void> => {
     await addDoc(collection(db, 'feedback'), feedback);
+  },
+
+  getAllFeedback: async (): Promise<any[]> => {
+    const q = query(collection(db, 'feedback'), orderBy('timestamp', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
+  deleteFeedback: async (id: string): Promise<void> => {
+    await deleteDoc(doc(db, 'feedback', id));
+  },
+
+  // --- User Management ---
+
+  syncUser: async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const userRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        role: user.email === 'brainiacgoatdev@gmail.com' ? 'admin' : 'user',
+        isBanned: false,
+        createdAt: serverTimestamp(),
+        lastLogin: serverTimestamp()
+      });
+    } else {
+      const existingData = userSnap.data();
+      await updateDoc(userRef, {
+        lastLogin: serverTimestamp(),
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        // Only auto-upgrade to admin if not already set and email matches
+        ...(existingData.role !== 'admin' && user.email === 'brainiacgoatdev@gmail.com' ? { role: 'admin' } : {})
+      });
+    }
+  },
+
+  getAllUsers: async (): Promise<any[]> => {
+    const q = query(collection(db, 'users'), orderBy('lastLogin', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
+  updateUserStatus: async (userId: string, isBanned: boolean): Promise<void> => {
+    await updateDoc(doc(db, 'users', userId), { isBanned });
+  },
+
+  deleteUser: async (userId: string): Promise<void> => {
+    await deleteDoc(doc(db, 'users', userId));
   },
 
   // --- Runtime API (Uses the Server API to bypass Firestore rules) ---

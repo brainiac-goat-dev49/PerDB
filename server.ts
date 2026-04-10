@@ -22,7 +22,21 @@ function getDb() {
         console.warn("FIREBASE_SERVICE_ACCOUNT is missing. API will be limited.");
         return null;
       }
-      const serviceAccount = JSON.parse(saEnv);
+
+      // Robust JSON parsing check
+      let serviceAccount;
+      if (saEnv.trim().startsWith('{')) {
+        try {
+          serviceAccount = JSON.parse(saEnv);
+        } catch (e) {
+          console.error("FIREBASE_SERVICE_ACCOUNT is not valid JSON:", e);
+          return null;
+        }
+      } else {
+        console.error("FIREBASE_SERVICE_ACCOUNT does not appear to be a JSON string (it should start with '{'). It currently starts with:", saEnv.substring(0, 20));
+        return null;
+      }
+
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
       });
@@ -40,16 +54,44 @@ function getDb() {
 
 // Simple in-memory cache for GET requests
 const getCache = new Map<string, { data: any, timestamp: number }>();
-const CACHE_TTL = 3000; // 3 seconds cache for same collection/limit
+const CACHE_TTL = 30000; // 30 seconds cache for same collection/limit
 
 // Project Metadata Cache (to avoid lookup on every request)
 const projectCache = new Map<string, { doc: any, timestamp: number }>();
-const PROJECT_CACHE_TTL = 60000; // 1 minute
+const PROJECT_CACHE_TTL = 300000; // 5 minutes
 
 // Simple rate limiter
 const rateLimit = new Map<string, { count: number, lastReset: number }>();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 120; // 2 requests per second average
+const MAX_REQUESTS_PER_WINDOW = 60; // 1 request per second average
+
+// Stats Buffering (to reduce write operations)
+const statsBuffer = new Map<string, { reads: number, writes: number }>();
+const STATS_FLUSH_INTERVAL = 60000; // Flush every 1 minute
+
+function flushStats() {
+  const firestore = getDb();
+  if (!firestore || statsBuffer.size === 0) return;
+
+  console.log(`[Stats] Flushing buffered stats for ${statsBuffer.size} projects...`);
+  
+  statsBuffer.forEach(async (stats, projectId) => {
+    try {
+      await firestore.collection('projects').doc(projectId).update({
+        'stats.reads': admin.firestore.FieldValue.increment(stats.reads),
+        'stats.writes': admin.firestore.FieldValue.increment(stats.writes),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      console.error(`[Stats] Failed to flush stats for project ${projectId}:`, e);
+    }
+  });
+  
+  statsBuffer.clear();
+}
+
+// Start the flush interval
+setInterval(flushStats, STATS_FLUSH_INTERVAL);
 
 async function startServer() {
   console.log("--- Starting PerDB Server ---");
@@ -227,17 +269,19 @@ async function startServer() {
           _created: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // Update collection list metadata and stats
-        const updateData: any = {
-          'stats.writes': admin.firestore.FieldValue.increment(1),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
+        // Update collection list metadata and stats (Buffered)
+        const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
+        stats.writes++;
+        statsBuffer.set(projectId, stats);
 
         if (!projectData.collectionList?.includes(collectionName)) {
-           updateData.collectionList = admin.firestore.FieldValue.arrayUnion(collectionName);
+           await projectDoc.ref.update({
+             collectionList: admin.firestore.FieldValue.arrayUnion(collectionName),
+             updatedAt: admin.firestore.FieldValue.serverTimestamp()
+           });
+           // Clear project cache to reflect new collection list
+           projectCache.delete(apiKeyStr);
         }
-
-        await projectDoc.ref.update(updateData);
 
         return res.status(200).json({ success: true, id: docRef.id });
       }
@@ -260,10 +304,10 @@ async function startServer() {
           return res.status(403).json({ error: 'Permission Denied' });
         }
 
-        // Update stats
-        await projectDoc.ref.update({
-          'stats.reads': admin.firestore.FieldValue.increment(1)
-        });
+        // Update stats (Buffered)
+        const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
+        stats.reads++;
+        statsBuffer.set(projectId, stats);
 
         const snapshot = await firestore.collection(docPath)
           .orderBy('_created', 'desc')
@@ -316,10 +360,10 @@ async function startServer() {
           _updated: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // Update stats
-        await projectDoc.ref.update({
-          'stats.writes': admin.firestore.FieldValue.increment(1)
-        });
+        // Update stats (Buffered)
+        const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
+        stats.writes++;
+        statsBuffer.set(projectId, stats);
 
         return res.status(200).json({ success: true });
       }
@@ -350,10 +394,10 @@ async function startServer() {
 
         await docRef.delete();
 
-        // Update stats
-        await projectDoc.ref.update({
-          'stats.writes': admin.firestore.FieldValue.increment(1)
-        });
+        // Update stats (Buffered)
+        const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
+        stats.writes++;
+        statsBuffer.set(projectId, stats);
 
         return res.status(200).json({ success: true });
       }

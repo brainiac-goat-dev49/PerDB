@@ -15,23 +15,42 @@ service cloud.firestore {
       return isAuthenticated() && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
     }
 
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "brainiacgoatdev@gmail.com" ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned']));
+    }
+
     // Projects Collection
     match /projects/{projectId} {
-      // Allow users to list their own projects
-      allow list: if isAuthenticated() && request.query.limit <= 100;
+      // Allow users to list their own projects, or admin to list all
+      allow list: if isAuthenticated() && (isAdmin() || request.query.limit <= 100);
       
-      // Allow users to read, create, update, delete their own projects
+      // Allow users to read, create, update, delete their own projects, or admin to manage all
       allow get, create, update, delete: if isAuthenticated() && (
+        isAdmin() ||
         (request.method == 'create' && request.resource.data.ownerId == request.auth.uid) ||
         (resource.data.ownerId == request.auth.uid)
       );
 
       // Subcollections for project data
       match /collections/{collectionName}/docs/{docId} {
-        // Allow project owner to read/write everything in their project's subcollections
-        // This is used by the dashboard to manage data
-        allow read, write: if isProjectOwner(projectId);
+        allow read, write: if isAdmin() || isProjectOwner(projectId);
       }
+    }
+
+    // Feedback Collection
+    match /feedback/{feedbackId} {
+      allow create: if true; // Allow anyone to send feedback
+      allow read, delete: if isAdmin();
     }
     
     // Default Deny

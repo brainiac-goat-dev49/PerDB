@@ -225,6 +225,7 @@ class PerDB {
                 <NavLink target="writing" label="Writing Data" />
                 <NavLink target="reading" label="Reading Data" />
                 <NavLink target="management" label="Data Management" />
+                <NavLink target="limits" label="Limits & Quotas" />
                 <NavLink target="usecases" label="Common Use Cases" />
                 <NavLink target="security" label="Security Rules" />
               </nav>
@@ -469,7 +470,7 @@ scores.forEach(s => {
                   <h2 className="text-2xl font-bold text-white">Data Management</h2>
                </div>
                <p className="text-slate-400 mb-6">
-                 The PerDB Dashboard provides powerful tools to manage your data without writing code.
+                  The PerDB Dashboard provides powerful tools to manage your data without writing code.
                </p>
                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
@@ -484,6 +485,60 @@ scores.forEach(s => {
                      <h4 className="text-slate-200 font-bold text-xs uppercase mb-2">Bulk Actions</h4>
                      <p className="text-xs text-slate-500">Select multiple entries to delete them all at once, saving you time.</p>
                   </div>
+               </div>
+            </section>
+
+            <div className="w-full h-px bg-slate-800" />
+
+            <section id="limits">
+               <div className="flex items-center space-x-3 mb-6">
+                  <Cpu className="w-6 h-6 text-brand-400" />
+                  <h2 className="text-2xl font-bold text-white">Limits & Quotas</h2>
+               </div>
+               <p className="text-slate-400 mb-6">
+                  To ensure the platform remains free and performant for everyone, we enforce the following limits:
+               </p>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Card className="bg-slate-900/40 border-slate-800">
+                    <h3 className="text-lg font-bold text-white mb-2">Project Limits</h3>
+                    <ul className="space-y-2 text-sm text-slate-400">
+                      <li className="flex justify-between">
+                        <span>Max Projects per User</span>
+                        <span className="text-brand-400 font-mono">5</span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span>Max Collections per Project</span>
+                        <span className="text-brand-400 font-mono">Unlimited</span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span>Max Entries per Collection</span>
+                        <span className="text-brand-400 font-mono">10,000*</span>
+                      </li>
+                    </ul>
+                  </Card>
+                  <Card className="bg-slate-900/40 border-slate-800">
+                    <h3 className="text-lg font-bold text-white mb-2">API Quotas</h3>
+                    <ul className="space-y-2 text-sm text-slate-400">
+                      <li className="flex justify-between">
+                        <span>Rate Limit (per API Key)</span>
+                        <span className="text-brand-400 font-mono">60 req/min</span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span>Max Request Payload</span>
+                        <span className="text-brand-400 font-mono">100 KB</span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span>Read Cache TTL</span>
+                        <span className="text-brand-400 font-mono">30 seconds</span>
+                      </li>
+                    </ul>
+                  </Card>
+               </div>
+               <div className="mt-6 p-4 bg-brand-900/10 border border-brand-500/20 rounded-xl">
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    <strong>Note on Caching:</strong> PerDB uses aggressive server-side caching to reduce database load. 
+                    If you write data and then immediately read it, you might see the "old" data for up to 30 seconds due to the read cache.
+                  </p>
                </div>
             </section>
 

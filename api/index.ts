@@ -21,7 +21,21 @@ function getDb() {
         console.error("FIREBASE_SERVICE_ACCOUNT is missing");
         return null;
       }
-      const serviceAccount = JSON.parse(saEnv);
+
+      // Robust JSON parsing check
+      let serviceAccount;
+      if (saEnv.trim().startsWith('{')) {
+        try {
+          serviceAccount = JSON.parse(saEnv);
+        } catch (e) {
+          console.error("FIREBASE_SERVICE_ACCOUNT is not valid JSON:", e);
+          return null;
+        }
+      } else {
+        console.error("FIREBASE_SERVICE_ACCOUNT does not appear to be a JSON string (it should start with '{'). It currently starts with:", saEnv.substring(0, 20));
+        return null;
+      }
+
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
       });
@@ -52,6 +66,19 @@ const evaluateRule = (ruleStr: any, context: any) => {
   }
 };
 
+// Simple in-memory cache for GET requests
+const getCache = new Map<string, { data: any, timestamp: number }>();
+const CACHE_TTL = 30000; // 30 seconds
+
+// Project Metadata Cache
+const projectCache = new Map<string, { doc: any, timestamp: number }>();
+const PROJECT_CACHE_TTL = 300000; // 5 minutes
+
+// Simple rate limiter
+const rateLimit = new Map<string, { count: number, lastReset: number }>();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 60;
+
 // API Handler
 app.all('*all', async (req, res) => {
   // Debug endpoint
@@ -81,43 +108,73 @@ app.all('*all', async (req, res) => {
     }
 
     const apiKey = (req.headers['x-api-key'] || req.query.key) as string;
-    const projectsSnap = await firestore.collection('projects')
-      .where('apiKey', '==', apiKey)
-      .limit(1)
-      .get();
+    const secretKey = req.headers['x-secret-key'] as string;
+    
+    // 2. Lookup Project (with Cache)
+    const cachedProject = projectCache.get(apiKey);
+    let projectDoc;
 
-    if (projectsSnap.empty) {
-      return res.status(403).json({ error: 'Invalid API Key' });
+    if (cachedProject && (Date.now() - cachedProject.timestamp < PROJECT_CACHE_TTL)) {
+      projectDoc = cachedProject.doc;
+    } else {
+      const projectsSnap = await firestore.collection('projects')
+        .where('apiKey', '==', apiKey)
+        .limit(1)
+        .get();
+
+      if (projectsSnap.empty) {
+        return res.status(403).json({ error: 'Invalid API Key' });
+      }
+      projectDoc = projectsSnap.docs[0];
+      projectCache.set(apiKey, { doc: projectDoc, timestamp: Date.now() });
     }
 
-    const projectDoc = projectsSnap.docs[0];
     const projectId = projectDoc.id;
     const projectData = projectDoc.data();
+
+    // Rate Limiting
+    const now = Date.now();
+    const limitData = rateLimit.get(apiKey) || { count: 0, lastReset: now };
+    if (now - limitData.lastReset > RATE_LIMIT_WINDOW) {
+      limitData.count = 0;
+      limitData.lastReset = now;
+    }
+    limitData.count++;
+    rateLimit.set(apiKey, limitData);
+    
+    if (limitData.count > MAX_REQUESTS_PER_WINDOW && !secretKey) {
+      return res.status(429).json({ error: 'Too Many Requests' });
+    }
+
+    const isMasterRequest = !!(secretKey && secretKey === projectData.secretKey);
 
     // Domain Check
     const referer = (req.headers.referer || req.headers.referrer) as string;
     const origin = req.headers.origin as string;
-    const isPerchance = (referer && referer.includes('perchance.org')) || 
-                       (origin && origin.includes('perchance.org'));
-    
     const isLocal = process.env.NODE_ENV !== 'production';
     const isOurDomain = referer && (referer.includes('koyeb.app') || referer.includes('run.app') || referer.includes('ai.studio'));
+    
+    if (!isLocal && !isOurDomain && !isMasterRequest) {
+      const allowedOrigins = projectData.permissions?.allowedOrigins || [];
+      const isAllowed = allowedOrigins.length === 0 
+        ? (referer || origin || '').includes('perchance.org')
+        : allowedOrigins.some((o: string) => (referer || origin || '').includes(o));
 
-    if (!isPerchance && !isLocal && !isOurDomain) {
-       return res.status(403).json({ 
-         error: 'Domain Restricted', 
-         message: 'PerDB is currently in beta and only supports projects hosted on perchance.org' 
-       });
+      if (!isAllowed) {
+        return res.status(403).json({ error: 'Domain Restricted' });
+      }
     }
 
-    // Increment Analytics (Atomic)
+    // Increment Analytics (Atomic for Vercel since we can't buffer easily)
     if (req.method === 'GET') {
        await projectDoc.ref.update({
-         totalReads: admin.firestore.FieldValue.increment(1)
+         'stats.reads': admin.firestore.FieldValue.increment(1),
+         updatedAt: admin.firestore.FieldValue.serverTimestamp()
        });
     } else if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
        await projectDoc.ref.update({
-         totalWrites: admin.firestore.FieldValue.increment(1)
+         'stats.writes': admin.firestore.FieldValue.increment(1),
+         updatedAt: admin.firestore.FieldValue.serverTimestamp()
        });
     }
 
@@ -164,14 +221,22 @@ app.all('*all', async (req, res) => {
 
     // GET: Read
     if (req.method === 'GET') {
-      const readRule = projectRules[collectionName]?.['.read'];
-      const isAllowed = evaluateRule(readRule, { auth: authContext, newData: null, data: null });
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      // Cache check
+      const cacheKey = `${projectId}:${collectionName}:${limit}`;
+      const cached = getCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < CACHE_TTL) && !isMasterRequest) {
+        return res.status(200).json(cached.data);
+      }
 
-      if (!isAllowed && readRule !== undefined) {
+      const readRule = projectRules[collectionName]?.['.read'];
+      const isAllowed = isMasterRequest || evaluateRule(readRule, { auth: authContext, newData: null, data: null });
+
+      if (!isAllowed && readRule !== undefined && !isMasterRequest) {
         return res.status(403).json({ error: 'Permission Denied' });
       }
 
-      const limit = parseInt(req.query.limit as string) || 50;
       const snapshot = await firestore.collection(docPath)
         .orderBy('_created', 'desc')
         .limit(limit)
@@ -184,6 +249,10 @@ app.all('*all', async (req, res) => {
         }
         return { id: doc.id, ...d };
       });
+
+      if (!isMasterRequest) {
+        getCache.set(cacheKey, { data, timestamp: Date.now() });
+      }
 
       return res.status(200).json(data);
     }
