@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -96,13 +97,13 @@ function getDb() {
         credential: admin.credential.cert(serviceAccount)
       });
       console.log("Firebase Admin initialized");
-      db = admin.firestore((firebaseConfig as any).firestoreDatabaseId);
+      db = getFirestore((firebaseConfig as any).firestoreDatabaseId);
     } catch (error) {
       console.error("Firebase Admin Init Error:", error);
       return null;
     }
   } else {
-    db = admin.firestore((firebaseConfig as any).firestoreDatabaseId);
+    db = getFirestore((firebaseConfig as any).firestoreDatabaseId);
   }
   return db;
 }
