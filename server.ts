@@ -5,6 +5,7 @@ import admin from 'firebase-admin';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import firebaseConfig from './firebase-applet-config.json';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,13 +96,13 @@ function getDb() {
         credential: admin.credential.cert(serviceAccount)
       });
       console.log("Firebase Admin initialized");
-      db = admin.firestore();
+      db = admin.firestore((firebaseConfig as any).firestoreDatabaseId);
     } catch (error) {
       console.error("Firebase Admin Init Error:", error);
       return null;
     }
   } else {
-    db = admin.firestore();
+    db = admin.firestore((firebaseConfig as any).firestoreDatabaseId);
   }
   return db;
 }

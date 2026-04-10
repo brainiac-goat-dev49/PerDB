@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import admin from 'firebase-admin';
+import firebaseConfig from '../firebase-applet-config.json';
 
 const app = express();
 
@@ -94,13 +95,13 @@ function getDb() {
         credential: admin.credential.cert(serviceAccount)
       });
       console.log("Firebase Admin initialized");
-      db = admin.firestore();
+      db = admin.firestore((firebaseConfig as any).firestoreDatabaseId);
     } catch (error) {
       console.error("Firebase Admin Init Error:", error);
       return null;
     }
   } else {
-    db = admin.firestore();
+    db = admin.firestore((firebaseConfig as any).firestoreDatabaseId);
   }
   return db;
 }
