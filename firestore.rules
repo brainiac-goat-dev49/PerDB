@@ -17,7 +17,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.email == "brainiacgoatdev@gmail.com" ||
+        request.auth.token.email == "testimonyfresh49@gmail.com" ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin")
       );
@@ -28,6 +28,12 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isAuthenticated() && isOwner(userId);
       allow update: if isAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned']));
+    }
+
+    // Banned Emails Collection
+    match /banned_emails/{email} {
+      allow get: if true; // Allow anyone to check if an email is banned
+      allow list, write: if isAdmin();
     }
 
     // Projects Collection

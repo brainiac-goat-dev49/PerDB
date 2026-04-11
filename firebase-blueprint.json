@@ -48,6 +48,16 @@
         "message": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
       }
+    },
+    "BannedEmail": {
+      "title": "BannedEmail",
+      "description": "A record of a banned email address.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "bannedAt": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -62,6 +72,10 @@
     "feedback": {
       "schema": "Feedback",
       "description": "Collection of feedback messages."
+    },
+    "banned_emails": {
+      "schema": "BannedEmail",
+      "description": "Collection of banned email addresses."
     }
   }
 }

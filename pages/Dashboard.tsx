@@ -1055,7 +1055,7 @@ export const Dashboard: React.FC = () => {
                       </p>
                       
                       <div className="flex flex-wrap gap-2 mb-3">
-                        {selectedProject.permissions.allowedOrigins.map((origin) => (
+                        {Array.from(new Set(selectedProject.permissions.allowedOrigins)).map((origin) => (
                           <div key={origin} className="flex items-center bg-slate-900 border border-slate-700 rounded-md px-2 py-1 group">
                             <span className="text-xs text-slate-300 font-mono">{origin}</span>
                             <button 

@@ -134,7 +134,7 @@ export const Contact: React.FC = () => {
           </div>
           <div>
             <h4 className="text-white font-semibold mb-1">Direct Email</h4>
-            <p className="text-sm text-slate-500">brainiacgoatdev@gmail.com</p>
+            <p className="text-sm text-slate-500">testimonyfresh49@gmail.com</p>
           </div>
         </div>
         <div className="flex items-start space-x-4 p-4 rounded-xl bg-slate-900/30 border border-slate-800/50">

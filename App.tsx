@@ -91,7 +91,7 @@ const AppContent: React.FC = () => {
               <NavItem to="/playground" icon={Code} label="Playground" />
               <NavItem to="/about" icon={Info} label="About" />
               <NavItem to="/contact" icon={MessageSquare} label="Contact" />
-              {user?.email === 'brainiacgoatdev@gmail.com' && (
+              {user?.email === 'testimonyfresh49@gmail.com' && (
                 <NavItem to="/admin" icon={Shield} label="Admin" />
               )}
             </div>
@@ -143,7 +143,7 @@ const AppContent: React.FC = () => {
             <NavItem to="/playground" icon={Code} label="Playground" />
             <NavItem to="/about" icon={Info} label="About" />
             <NavItem to="/contact" icon={MessageSquare} label="Contact" />
-            {user?.email === 'brainiacgoatdev@gmail.com' && (
+            {user?.email === 'testimonyfresh49@gmail.com' && (
               <NavItem to="/admin" icon={Shield} label="Admin" />
             )}
             
@@ -178,7 +178,7 @@ const AppContent: React.FC = () => {
           <Route path="/auth" element={user ? <Navigate to="/dashboard" /> : <Auth />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
-          <Route path="/admin" element={user?.email === 'brainiacgoatdev@gmail.com' ? <Admin /> : <Navigate to="/" />} />
+          <Route path="/admin" element={user?.email === 'testimonyfresh49@gmail.com' ? <Admin /> : <Navigate to="/" />} />
         </Routes>
       </main>
 

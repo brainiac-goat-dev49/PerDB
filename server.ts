@@ -181,7 +181,7 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decodedToken = await admin.auth().verifyIdToken(token);
       
-      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+      if (decodedToken.email !== 'testimonyfresh49@gmail.com') {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
 
@@ -205,7 +205,7 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decodedToken = await admin.auth().verifyIdToken(token);
       
-      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+      if (decodedToken.email !== 'testimonyfresh49@gmail.com') {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
 
@@ -229,7 +229,7 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decodedToken = await admin.auth().verifyIdToken(token);
       
-      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+      if (decodedToken.email !== 'testimonyfresh49@gmail.com') {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
 
@@ -253,7 +253,7 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decodedToken = await admin.auth().verifyIdToken(token);
       
-      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+      if (decodedToken.email !== 'testimonyfresh49@gmail.com') {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
 
@@ -323,7 +323,7 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decodedToken = await admin.auth().verifyIdToken(token);
       
-      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+      if (decodedToken.email !== 'testimonyfresh49@gmail.com') {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
 
@@ -349,7 +349,7 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decodedToken = await admin.auth().verifyIdToken(token);
       
-      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+      if (decodedToken.email !== 'testimonyfresh49@gmail.com') {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
 
@@ -523,9 +523,11 @@ async function startServer() {
         stats.writes++;
         statsBuffer.set(projectId, stats);
 
-        if (!projectData.collectionList?.includes(collectionName)) {
+        if (!projectData.collectionList?.includes(collectionName) || (new Set(projectData.collectionList || []).size !== (projectData.collectionList || []).length)) {
+           const currentList = projectData.collectionList || [];
+           const newList = Array.from(new Set([...currentList, collectionName]));
            await projectDoc.ref.update({
-             collectionList: admin.firestore.FieldValue.arrayUnion(collectionName),
+             collectionList: newList,
              updatedAt: admin.firestore.FieldValue.serverTimestamp()
            });
            // Clear project cache to reflect new collection list

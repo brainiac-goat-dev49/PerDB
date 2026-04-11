@@ -28,7 +28,7 @@ export const Admin: React.FC = () => {
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user && user.email === 'brainiacgoatdev@gmail.com') {
+      if (user && user.email === 'testimonyfresh49@gmail.com') {
         setIsAdmin(true);
         loadData();
       } else {

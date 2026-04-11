@@ -58,7 +58,9 @@ export const FirebaseService = {
     if (!docSnap.exists()) return [];
     
     const data = docSnap.data();
-    const colNames: string[] = data.collectionList || [];
+    const rawColNames: string[] = data.collectionList || [];
+    // Deduplicate names to prevent duplicate React keys in the UI
+    const colNames = Array.from(new Set(rawColNames));
     const collections: Collection[] = [];
 
     for (const name of colNames) {
@@ -208,7 +210,7 @@ export const FirebaseService = {
         email: user.email,
         displayName: user.displayName,
         photoURL: user.photoURL,
-        role: user.email === 'brainiacgoatdev@gmail.com' ? 'admin' : 'user',
+        role: user.email === 'testimonyfresh49@gmail.com' ? 'admin' : 'user',
         isBanned: false,
         createdAt: serverTimestamp(),
         lastLogin: serverTimestamp()
@@ -221,7 +223,7 @@ export const FirebaseService = {
         displayName: user.displayName,
         photoURL: user.photoURL,
         // Only auto-upgrade to admin if not already set and email matches
-        ...(existingData.role !== 'admin' && user.email === 'brainiacgoatdev@gmail.com' ? { role: 'admin' } : {})
+        ...(existingData.role !== 'admin' && user.email === 'testimonyfresh49@gmail.com' ? { role: 'admin' } : {})
       });
     }
   },
