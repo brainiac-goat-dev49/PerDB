@@ -5,10 +5,12 @@ import {
   signInWithEmailAndPassword, 
   updateProfile 
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { Button, Input, Card } from '../components/ui';
 import { Database, LogIn, UserPlus, AlertCircle } from 'lucide-react';
+
+import { FirebaseService } from '../services/firebaseService';
 
 export const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -28,6 +30,13 @@ export const Auth: React.FC = () => {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
+        // Check if email is banned before creating
+        const bannedRef = doc(db, 'banned_emails', email);
+        const bannedSnap = await getDoc(bannedRef);
+        if (bannedSnap.exists()) {
+          throw new Error("This email is permanently banned from PerDB.");
+        }
+
         // Create Authentication User
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(cred.user, { displayName: name });
@@ -37,13 +46,19 @@ export const Auth: React.FC = () => {
           uid: cred.user.uid,
           email: email,
           displayName: name,
-          createdAt: serverTimestamp()
+          role: 'user',
+          isBanned: false,
+          createdAt: serverTimestamp(),
+          lastLogin: serverTimestamp()
         });
       }
+      
+      // Sync user (this also checks for ban on login)
+      await FirebaseService.syncUser();
       navigate('/dashboard');
     } catch (err: any) {
       console.error(err);
-      let msg = "Authentication failed.";
+      let msg = err.message || "Authentication failed.";
       if (err.code === 'auth/invalid-credential') msg = "Invalid email or password.";
       if (err.code === 'auth/email-already-in-use') msg = "Email already in use.";
       if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";

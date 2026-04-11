@@ -65,6 +65,31 @@ export const Admin: React.FC = () => {
     }
   };
 
+  const handleDeleteUserFull = async (userId: string, email: string) => {
+    if (!confirm(`CRITICAL: Are you sure you want to delete user ${email} and ALL their data? This will also ban their email from future use. This action is irreversible.`)) return;
+    
+    try {
+      setLoading(true);
+      await FirebaseService.deleteUserFull(userId);
+      setUsers(users.filter(u => u.id !== userId));
+      alert("User and all associated data deleted successfully.");
+    } catch (err: any) {
+      alert("Failed to delete user: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendResetLink = async (email: string) => {
+    try {
+      const link = await FirebaseService.sendResetLink(email);
+      // In a real app, you'd email this. Here we'll show it in a prompt so the admin can copy it.
+      window.prompt("Password reset link generated. Copy and send this to the user:", link);
+    } catch (err: any) {
+      alert("Failed to generate reset link: " + err.message);
+    }
+  };
+
   const handleDeleteFeedback = async (id: string) => {
     if (!confirm("Are you sure you want to delete this feedback?")) return;
     try {
@@ -222,9 +247,19 @@ export const Admin: React.FC = () => {
                         variant="ghost"
                         size="sm"
                         className="text-slate-400 hover:bg-slate-800"
-                        onClick={() => alert("Reset link feature coming soon via Admin SDK")}
+                        onClick={() => handleSendResetLink(user.email)}
                       >
                         Reset
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:bg-red-500/10"
+                        onClick={() => handleDeleteUserFull(user.id, user.email)}
+                        title="Delete User and ALL Data"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>

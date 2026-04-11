@@ -242,6 +242,102 @@ async function startServer() {
     }
   });
 
+  app.post("/api/admin/delete-user-full", async (req, res) => {
+    try {
+      const firestore = getDb();
+      if (!firestore) return res.status(500).json({ error: 'Firebase Admin not initialized' });
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+      
+      const token = authHeader.split('Bearer ')[1];
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      
+      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+        return res.status(403).json({ error: 'Forbidden: Admin access only' });
+      }
+
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: 'Missing User ID' });
+
+      const userDoc = await firestore.collection('users').doc(userId).get();
+      if (!userDoc.exists) return res.status(404).json({ error: 'User not found' });
+      
+      const userData = userDoc.data() || {};
+      const userEmail = userData.email;
+
+      // 1. Add to banned_emails
+      if (userEmail) {
+        await firestore.collection('banned_emails').doc(userEmail).set({
+          email: userEmail,
+          bannedAt: admin.firestore.FieldValue.serverTimestamp(),
+          reason: 'Full account deletion by admin'
+        });
+      }
+
+      // 2. Delete all projects and their data
+      const projectsSnap = await firestore.collection('projects').where('ownerId', '==', userId).get();
+      
+      for (const projectDoc of projectsSnap.docs) {
+        const projectId = projectDoc.id;
+        
+        // Delete all collections under this project
+        // We use a manual approach since recursiveDelete might be tricky in some environments
+        const collectionsSnap = await projectDoc.ref.collection('collections').get();
+        for (const colDoc of collectionsSnap.docs) {
+          const docsSnap = await colDoc.ref.collection('docs').get();
+          const batch = firestore.batch();
+          docsSnap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+          await colDoc.ref.delete();
+        }
+        
+        await projectDoc.ref.delete();
+      }
+
+      // 3. Delete from Firebase Auth
+      try {
+        await admin.auth().deleteUser(userId);
+      } catch (e) {
+        console.warn("Auth user already deleted or not found:", e);
+      }
+
+      // 4. Delete user doc
+      await firestore.collection('users').doc(userId).delete();
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Admin Full Delete Error:", error);
+      res.status(500).json({ error: 'Failed to perform full user deletion' });
+    }
+  });
+
+  app.post("/api/admin/send-reset-link", async (req, res) => {
+    try {
+      const firestore = getDb();
+      if (!firestore) return res.status(500).json({ error: 'Firebase Admin not initialized' });
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+      
+      const token = authHeader.split('Bearer ')[1];
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      
+      if (decodedToken.email !== 'brainiacgoatdev@gmail.com') {
+        return res.status(403).json({ error: 'Forbidden: Admin access only' });
+      }
+
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Missing Email' });
+
+      const link = await admin.auth().generatePasswordResetLink(email);
+      res.json({ success: true, link });
+    } catch (error) {
+      console.error("Admin Reset Link Error:", error);
+      res.status(500).json({ error: 'Failed to generate reset link' });
+    }
+  });
+
   app.delete("/api/admin/feedback/:id", async (req, res) => {
     try {
       const firestore = getDb();
@@ -528,10 +624,10 @@ async function startServer() {
 
         const writeRule = projectRules[collectionName]?.['.write'];
         const docRef = firestore.collection(docPath).doc(docId);
-        console.log(`[API] DELETE Request: Path=${docPath}, ID=${docId}`);
+        console.log(`[API] DELETE Request: FullPath=${docRef.path}, ID=${docId}`);
         const docSnap = await docRef.get();
         if (!docSnap.exists) {
-          console.warn(`[API] DELETE Document not found: ${docPath}/${docId}`);
+          console.warn(`[API] DELETE Document not found at path: ${docRef.path}`);
           return res.status(404).json({ error: 'Document not found' });
         }
 
@@ -546,6 +642,17 @@ async function startServer() {
         }
 
         await docRef.delete();
+
+        // Check if collection is now empty
+        const remainingSnap = await firestore.collection(docPath).limit(1).get();
+        if (remainingSnap.empty) {
+          await projectDoc.ref.update({
+            collectionList: admin.firestore.FieldValue.arrayRemove(collectionName),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          // Clear project cache to reflect removed collection
+          projectCache.delete(apiKeyStr);
+        }
 
         // Update stats (Buffered)
         const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };

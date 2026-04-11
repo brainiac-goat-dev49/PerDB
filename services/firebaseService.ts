@@ -192,6 +192,14 @@ export const FirebaseService = {
     const user = auth.currentUser;
     if (!user) return;
 
+    // Check if banned
+    const bannedRef = doc(db, 'banned_emails', user.email || '');
+    const bannedSnap = await getDoc(bannedRef);
+    if (bannedSnap.exists()) {
+      await auth.signOut();
+      throw new Error("This account has been permanently banned from PerDB.");
+    }
+
     const userRef = doc(db, 'users', user.uid);
     const userSnap = await getDoc(userRef);
 
@@ -256,6 +264,48 @@ export const FirebaseService = {
 
   deleteUser: async (userId: string): Promise<void> => {
     await deleteDoc(doc(db, 'users', userId));
+  },
+
+  deleteUserFull: async (userId: string): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Unauthorized");
+    const token = await user.getIdToken();
+
+    const res = await fetch('/api/admin/delete-user-full', {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ userId })
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to delete user and data');
+    }
+  },
+
+  sendResetLink: async (email: string): Promise<string> => {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Unauthorized");
+    const token = await user.getIdToken();
+
+    const res = await fetch('/api/admin/send-reset-link', {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email })
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to generate reset link');
+    }
+    const data = await res.json();
+    return data.link;
   },
 
   // --- Runtime API (Uses the Server API to bypass Firestore rules) ---
