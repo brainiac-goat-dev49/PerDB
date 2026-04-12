@@ -503,6 +503,16 @@ async function startServer() {
         }
       }
 
+      // Helper to invalidate cache
+      const invalidateCache = (projectId: string, collectionName: string) => {
+        const prefix = `${projectId}:${collectionName}:`;
+        for (const key of getCache.keys()) {
+          if (key.startsWith(prefix)) {
+            getCache.delete(key);
+          }
+        }
+      };
+
       // --- POST: Create ---
       if (req.method === 'POST') {
         const payload = req.body;
@@ -518,6 +528,9 @@ async function startServer() {
           _created: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        // Invalidate cache
+        invalidateCache(projectId, collectionName);
+
         // Update collection list metadata and stats (Buffered)
         const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
         stats.writes++;
@@ -526,10 +539,19 @@ async function startServer() {
         if (!projectData.collectionList?.includes(collectionName) || (new Set(projectData.collectionList || []).size !== (projectData.collectionList || []).length)) {
            const currentList = projectData.collectionList || [];
            const newList = Array.from(new Set([...currentList, collectionName]));
+           
+           // Update project metadata
            await projectDoc.ref.update({
              collectionList: newList,
              updatedAt: admin.firestore.FieldValue.serverTimestamp()
            });
+
+           // Explicitly create the collection document so it's not a "phantom" in Firestore console
+           await firestore.doc(`projects/${projectId}/collections/${collectionName}`).set({
+             name: collectionName,
+             updatedAt: admin.firestore.FieldValue.serverTimestamp()
+           }, { merge: true });
+
            // Clear project cache to reflect new collection list
            projectCache.delete(apiKeyStr);
         }
@@ -566,8 +588,8 @@ async function startServer() {
           .get();
 
         const data = snapshot.docs.map(doc => ({
-          id: doc.id,
           ...doc.data(),
+          id: doc.id,
           _created: doc.data()._created?.toDate?.()?.toISOString()
         }));
 
@@ -611,6 +633,9 @@ async function startServer() {
           _updated: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        // Invalidate cache
+        invalidateCache(projectId, collectionName);
+
         // Update stats (Buffered)
         const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
         stats.writes++;
@@ -645,6 +670,9 @@ async function startServer() {
 
         await docRef.delete();
 
+        // Invalidate cache
+        invalidateCache(projectId, collectionName);
+
         // Check if collection is now empty
         const remainingSnap = await firestore.collection(docPath).limit(1).get();
         if (remainingSnap.empty) {
@@ -652,6 +680,10 @@ async function startServer() {
             collectionList: admin.firestore.FieldValue.arrayRemove(collectionName),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
           });
+          
+          // Also delete the collection document
+          await firestore.doc(`projects/${projectId}/collections/${collectionName}`).delete();
+          
           // Clear project cache to reflect removed collection
           projectCache.delete(apiKeyStr);
         }

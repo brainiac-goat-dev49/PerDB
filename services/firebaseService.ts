@@ -67,7 +67,7 @@ export const FirebaseService = {
       const colRef = collection(db, `projects/${projectId}/collections/${name}/docs`);
       const q = query(colRef, orderBy('_created', 'desc'), limit(10));
       const snapshot = await getDocs(q);
-      const entries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const entries = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
       collections.push({ name, entries });
     }
     return collections;
@@ -77,7 +77,7 @@ export const FirebaseService = {
     const colRef = collection(db, `projects/${projectId}/collections/${collectionName}/docs`);
     const q = query(colRef, orderBy('_created', 'desc'), limit(limitCount));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as DBEntry[];
+    return snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as DBEntry[];
   },
 
   createProject: async (name: string): Promise<Project> => {
