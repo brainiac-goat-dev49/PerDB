@@ -1051,7 +1051,7 @@ export const Dashboard: React.FC = () => {
                         <Badge variant="info">Security</Badge>
                       </div>
                       <p className="text-xs text-slate-500 mb-3">
-                        Restrict API requests to specific Perchance generators. If empty, all <span className="text-slate-400">perchance.org</span> domains are allowed.
+                        Restrict API requests to specific Perchance generators. If empty, all <span className="text-slate-400">perchance.org</span> domains are allowed. You can enter just the generator name or the full URL.
                       </p>
                       
                       <div className="flex flex-wrap gap-2 mb-3">
@@ -1076,7 +1076,7 @@ export const Dashboard: React.FC = () => {
 
                       <div className="flex gap-2">
                         <Input 
-                          placeholder="e.g. my-generator-name" 
+                          placeholder="e.g. my-generator-name or perchance.org/my-gen" 
                           className="flex-1 h-9 text-xs"
                           value={newOrigin}
                           onChange={(e) => setNewOrigin(e.target.value)}

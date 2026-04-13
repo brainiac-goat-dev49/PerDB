@@ -453,7 +453,15 @@ async function startServer() {
         // If no origins specified, we default to allowing all perchance.org for backward compatibility 
         const isAllowed = allowedOrigins.length === 0 
           ? origin.includes('perchance.org') 
-          : allowedOrigins.some((allowed: string) => origin.includes(allowed));
+          : allowedOrigins.some((allowed: string) => {
+              // Special handling for Perchance subdomains
+              if (allowed.includes('perchance.org') && origin.includes('perchance.org')) {
+                const normAllowed = allowed.replace(/^https?:\/\//, '').replace(/^.*\.perchance\.org/, 'perchance.org');
+                const normOrigin = origin.replace(/^https?:\/\//, '').replace(/^.*\.perchance\.org/, 'perchance.org');
+                return normOrigin.includes(normAllowed);
+              }
+              return origin.includes(allowed);
+            });
 
         if (!isAllowed) {
           console.warn(`Domain Restricted: Origin ${origin} not in ${allowedOrigins.join(', ')}`);

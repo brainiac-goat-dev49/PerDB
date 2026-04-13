@@ -424,7 +424,7 @@ class PerDB {
                      <Shield className="w-3 h-3 mr-2" /> Domain Locking
                    </h4>
                    <p className="text-xs text-slate-400">
-                     Protect your API key by restricting it to specific Perchance generators in the dashboard. This prevents others from using your key in their own projects.
+                     Protect your API key by restricting it to specific Perchance generators. Our smart system automatically handles Perchance's dynamic subdomains, so you can lock to a generator name or URL and it will work in both edit mode and full-page mode.
                    </p>
                  </div>
                  <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
@@ -603,7 +603,7 @@ scores.forEach(s => {
                    <Shield className="w-3 h-3 mr-2" /> Domain Restriction
                  </h4>
                  <p className="text-xs text-slate-400">
-                   To prevent abuse and keep the service free, PerDB currently only accepts requests from projects hosted on <strong>perchance.org</strong> (e.g., <code>perchance.org/your-project</code>). Local development (localhost) is also supported.
+                   To prevent abuse and keep the service free, PerDB currently only accepts requests from projects hosted on <strong>perchance.org</strong>. We use smart normalization to ensure your domain locks work regardless of the random subdomains Perchance generates behind the scenes. Local development (localhost) is also supported.
                  </p>
                </div>
                <p className="text-sm text-slate-500 italic">
