@@ -7,6 +7,9 @@ export interface DBEntry {
 export interface Collection {
   name: string;
   entries: DBEntry[];
+  totalCount?: number;
+  isLoading?: boolean;
+  hasLoaded?: boolean;
 }
 
 export interface ProjectPermissions {
@@ -30,6 +33,7 @@ export interface Project {
     activeUsers: number;
   };
   collections: Collection[];
+  collectionList: string[];
   createdAt: string;
   updatedAt: string;
 }

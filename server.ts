@@ -443,30 +443,57 @@ async function startServer() {
       const isMasterRequest = !!(secretKey && secretKey === projectData.secretKey);
 
       // --- Domain Restriction (Enforced per project) ---
-      const origin = req.headers.origin || req.headers.referer || '';
-      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+      const origin = req.headers.origin as string || '';
+      const referer = req.headers.referer as string || '';
+      const isLocalhost = (origin + referer).includes('localhost') || (origin + referer).includes('127.0.0.1');
       
       // If in production, check allowed origins (Master Key bypasses this)
       if (process.env.NODE_ENV === 'production' && !isLocalhost && !isMasterRequest) {
         const allowedOrigins = projectData.permissions?.allowedOrigins || [];
         
-        // If no origins specified, we default to allowing all perchance.org for backward compatibility 
+        // Helper to extract perchance slug
+        const getPerchanceSlug = (url: string) => {
+          if (!url) return null;
+          try {
+            // Remove protocol
+            const clean = url.replace(/^https?:\/\//, '');
+            if (!clean.includes('perchance.org')) return null;
+            
+            // Format: [subdomain].perchance.org/[slug]...
+            const parts = clean.split('/');
+            if (parts.length < 2) return null;
+            
+            // The slug is the first part of the path, before any # or ?
+            return parts[1].split(/[?#]/)[0].toLowerCase();
+          } catch (e) {
+            return null;
+          }
+        };
+
+        const refererSlug = getPerchanceSlug(referer);
+        
         const isAllowed = allowedOrigins.length === 0 
-          ? origin.includes('perchance.org') 
+          ? (origin + referer).includes('perchance.org') 
           : allowedOrigins.some((allowed: string) => {
-              // Special handling for Perchance subdomains
-              if (allowed.includes('perchance.org') && origin.includes('perchance.org')) {
-                const normAllowed = allowed.replace(/^https?:\/\//, '').replace(/^.*\.perchance\.org/, 'perchance.org');
-                const normOrigin = origin.replace(/^https?:\/\//, '').replace(/^.*\.perchance\.org/, 'perchance.org');
-                return normOrigin.includes(normAllowed);
+              // Exact match or includes check
+              if (origin.includes(allowed) || referer.includes(allowed)) return true;
+              
+              // Smart Perchance Slug check
+              if (refererSlug) {
+                const allowedSlug = allowed.includes('perchance.org') 
+                  ? getPerchanceSlug(allowed) 
+                  : allowed.toLowerCase().trim();
+                
+                if (allowedSlug && refererSlug === allowedSlug) return true;
               }
-              return origin.includes(allowed);
+              
+              return false;
             });
 
         if (!isAllowed) {
-          console.warn(`Domain Restricted: Origin ${origin} not in ${allowedOrigins.join(', ')}`);
+          console.warn(`Domain Restricted: Origin=${origin}, Referer=${referer} not in ${allowedOrigins.join(', ')}`);
           return res.status(403).json({ 
-            error: `Forbidden: This API Key is locked to specific domains. Current origin: ${origin || 'unknown'}` 
+            error: `Forbidden: This API Key is locked to specific domains. Ensure your generator name is added to the allowed list.` 
           });
         }
       }

@@ -57,7 +57,7 @@ const CollectionTable: React.FC<CollectionTableProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="overflow-x-auto custom-scrollbar pb-2 flex-1">
+      <div className="overflow-auto custom-scrollbar pb-2 flex-1">
         <table className="min-w-full divide-y divide-slate-800/50 text-left border-collapse">
           <thead className="bg-slate-900 sticky top-0 z-10">
             <tr>
@@ -400,6 +400,7 @@ interface CollectionViewerProps {
   projectApiKey: string;
   projectSecretKey?: string;
   onRefresh: () => void;
+  onLoad: (name: string) => void;
 }
 
 const CollectionViewer: React.FC<CollectionViewerProps> = ({ 
@@ -407,7 +408,8 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   projectId,
   projectApiKey,
   projectSecretKey,
-  onRefresh 
+  onRefresh,
+  onLoad
 }) => {
   const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
   const [editingEntry, setEditingEntry] = useState<DBEntry | null>(null);
@@ -419,6 +421,12 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   const [alertInfo, setAlertInfo] = useState<{ title: string; message: string } | null>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [isFullViewOpen, setIsFullViewOpen] = useState(false);
+
+  useEffect(() => {
+    if (!collection.hasLoaded && !collection.isLoading) {
+      onLoad(collection.name);
+    }
+  }, [collection.name, collection.hasLoaded, collection.isLoading, onLoad]);
 
   const handleToggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -496,6 +504,15 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
     }
   };
 
+  if (collection.isLoading && (!collection.entries || collection.entries.length === 0)) {
+    return (
+      <div className="border border-slate-700/50 rounded-lg p-10 mb-6 bg-slate-900/20 flex flex-col items-center justify-center animate-pulse">
+        <RefreshCw className="w-6 h-6 text-brand-500 animate-spin mb-3 opacity-50" />
+        <span className="text-xs text-slate-500 font-mono tracking-widest uppercase">Loading {collection.name}...</span>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="border border-slate-700/50 rounded-lg overflow-hidden mb-6 bg-slate-900/20 flex flex-col">
@@ -506,7 +523,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
                  {collection.name}
                </div>
                <span className="text-xs text-slate-500 border-l border-slate-700 pl-3">
-                 {collection.entries.length} {collection.entries.length === 1 ? 'Entry' : 'Entries'}
+                 {collection.totalCount !== undefined ? collection.totalCount : collection.entries.length} {(collection.totalCount !== undefined ? collection.totalCount : collection.entries.length) === 1 ? 'Entry' : 'Entries'}
                </span>
                {selectedIds.size > 0 && (
                  <div className="flex items-center gap-2 pl-3 border-l border-slate-700">
@@ -565,7 +582,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
             showPagination={false}
           />
         ) : (
-          <div className="bg-slate-950 px-4 py-4 overflow-x-auto max-h-[300px] custom-scrollbar">
+          <div className="bg-slate-950 px-4 py-4 overflow-auto max-h-[300px] custom-scrollbar">
              <pre className="text-xs text-slate-400 font-mono leading-relaxed">
                {JSON.stringify(collection.entries.slice(0, 10), null, 2)}
              </pre>
@@ -738,7 +755,7 @@ const RulesEditor: React.FC<RulesEditorProps> = ({ project, onUpdate }) => {
            <Shield className="w-3 h-3 mr-2 text-slate-400" />
            <span className="text-slate-400 text-xs font-medium">Simulator</span>
          </div>
-         <div className="flex-1 overflow-y-auto p-3 space-y-4 custom-scrollbar">
+         <div className="flex-1 overflow-auto p-3 space-y-4 custom-scrollbar">
             <div>
                <label className="text-[10px] text-slate-500 uppercase font-bold">Action</label>
                <div className="flex gap-2 mt-1">
@@ -813,9 +830,18 @@ export const Dashboard: React.FC = () => {
       if (selectedProject) {
         const updated = data.find(p => p.id === selectedProject.id);
         if (updated) {
-          // Fetch collections for the selected project
-          const collections = await FirebaseService.getProjectCollections(updated.id);
-          setSelectedProject({ ...updated, collections });
+          // Fetch skeleton list
+          const skeletons = await FirebaseService.getProjectCollections(updated.id);
+          
+          // Preserve already loaded data for existing collections to save quota
+          const mergedCollections = skeletons.map(skel => {
+            const existing = selectedProject.collections.find(c => c.name === skel.name);
+            // If we already have it loaded, keep the data.
+            // If requested via Refresh button specifically, we'll lose it but that's handled by users.
+            return existing && existing.hasLoaded ? existing : skel;
+          });
+
+          setSelectedProject({ ...updated, collections: mergedCollections });
         } else {
           setSelectedProject(null);
         }
@@ -877,7 +903,63 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const loadCollectionData = async (collectionName: string) => {
+    if (!selectedProject) return;
+    
+    // Check if already loading or loaded
+    const col = selectedProject.collections.find(c => c.name === collectionName);
+    if (col?.hasLoaded || col?.isLoading) return;
+
+    // Set loading state
+    setSelectedProject(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        collections: prev.collections.map(c => 
+          c.name === collectionName ? { ...c, isLoading: true } : c
+        )
+      };
+    });
+
+    try {
+      const data = await FirebaseService.getCollectionPreview(selectedProject.id, collectionName);
+      
+      setSelectedProject(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          collections: prev.collections.map(c => 
+            c.name === collectionName ? { 
+              ...c, 
+              ...data, 
+              isLoading: false, 
+              hasLoaded: true 
+            } : c
+          )
+        };
+      });
+    } catch (err) {
+      console.error(err);
+      setSelectedProject(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          collections: prev.collections.map(c => 
+            c.name === collectionName ? { ...c, isLoading: false } : c
+          )
+        };
+      });
+    }
+  };
+
   const [newOrigin, setNewOrigin] = useState('');
+  const [editingName, setEditingName] = useState('');
+
+  useEffect(() => {
+    if (selectedProject) {
+      setEditingName(selectedProject.name);
+    }
+  }, [selectedProject?.id]);
 
   const handleUpdateProject = async (data: Partial<Project>) => {
     if (!selectedProject) return;
@@ -1002,6 +1084,25 @@ export const Dashboard: React.FC = () => {
                   </div>
                   <div className="grid gap-6">
                     <div>
+                      <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Project Name</label>
+                      <div className="flex gap-2 mt-1.5">
+                        <Input 
+                          className="flex-1 h-10 border-slate-700 bg-slate-950 focus:border-brand-500/50"
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                        />
+                        <Button 
+                          size="sm" 
+                          icon={Save} 
+                          disabled={editingName === selectedProject.name || !editingName.trim()}
+                          onClick={() => handleUpdateProject({ name: editingName })}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
                       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Public API Key</label>
                       <div className="flex mt-1.5 group">
                         <code className="flex-1 bg-slate-950 rounded-l-lg border border-r-0 border-slate-700 px-3 py-2 text-sm text-brand-300 font-mono overflow-x-auto whitespace-nowrap group-hover:border-slate-600 transition-colors">
@@ -1048,7 +1149,7 @@ export const Dashboard: React.FC = () => {
                     <div className="border-t border-slate-700/50 pt-6">
                       <div className="flex items-center justify-between mb-2">
                         <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Domain Locking</label>
-                        <Badge variant="info">Security</Badge>
+                        <Badge variant="info" className="shadow-[0_0_10px_rgba(56,189,248,0.2)] border-blue-500/30">Security</Badge>
                       </div>
                       <p className="text-xs text-slate-500 mb-3">
                         Restrict API requests to specific Perchance generators. If empty, all <span className="text-slate-400">perchance.org</span> domains are allowed. You can enter just the generator name or the full URL.
@@ -1171,6 +1272,7 @@ export const Dashboard: React.FC = () => {
                               projectApiKey={selectedProject.apiKey}
                               projectSecretKey={selectedProject.secretKey}
                               onRefresh={fetchProjects}
+                              onLoad={loadCollectionData}
                             />
                           ))}
                         </div>

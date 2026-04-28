@@ -12,7 +12,8 @@ import {
   getDoc,
   serverTimestamp,
   orderBy,
-  limit
+  limit,
+  getCountFromServer
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { Project, DBEntry, Collection } from '../types';
@@ -44,6 +45,7 @@ const mapDocToProject = (docSnap: any): Project => {
 }`,
     stats: data.stats || { reads: 0, writes: 0, activeUsers: 0 },
     collections: [], // We fetch these on demand now
+    collectionList: data.collectionList || [],
     createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
     updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
   };
@@ -61,16 +63,29 @@ export const FirebaseService = {
     const rawColNames: string[] = data.collectionList || [];
     // Deduplicate names to prevent duplicate React keys in the UI
     const colNames = Array.from(new Set(rawColNames));
-    const collections: Collection[] = [];
+    // Return skeletons first to save reads. Data will be fetched on demand by CollectionViewer.
+    return colNames.map(name => ({
+      name,
+      entries: [],
+      totalCount: 0,
+      hasLoaded: false,
+      isLoading: false
+    }));
+  },
 
-    for (const name of colNames) {
-      const colRef = collection(db, `projects/${projectId}/collections/${name}/docs`);
-      const q = query(colRef, orderBy('_created', 'desc'), limit(10));
-      const snapshot = await getDocs(q);
-      const entries = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
-      collections.push({ name, entries });
-    }
-    return collections;
+  getCollectionPreview: async (projectId: string, collectionName: string): Promise<Partial<Collection>> => {
+    const colRef = collection(db, `projects/${projectId}/collections/${collectionName}/docs`);
+    const q = query(colRef, orderBy('_created', 'desc'), limit(10));
+    const [snapshot, countSnapshot] = await Promise.all([
+      getDocs(q),
+      getCountFromServer(colRef)
+    ]);
+    const entries = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+    return {
+      entries,
+      totalCount: countSnapshot.data().count,
+      hasLoaded: true
+    };
   },
 
   getFullCollection: async (projectId: string, collectionName: string, limitCount: number = 50): Promise<DBEntry[]> => {
