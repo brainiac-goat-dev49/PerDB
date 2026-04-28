@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Database, Key, Trash2, RefreshCw, Layers, Table as TableIcon, FileJson, Search, Pencil, Save, X, ChevronLeft, ChevronRight, Shield, Play, CheckCircle, XCircle } from 'lucide-react';
+import { QueryDocumentSnapshot } from 'firebase/firestore';
 import { FirebaseService } from '../services/firebaseService';
 import { Project, Collection, DBEntry } from '../types';
 import { Button, Card, Input, Badge, Modal, ConfirmationModal, AlertModal } from '../components/ui';
@@ -201,11 +202,27 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
   const [alertInfo, setAlertInfo] = useState<{ title: string; message: string } | null>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
-  const fetchFullEntries = async () => {
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageHistory, setPageHistory] = useState<(QueryDocumentSnapshot | null)[]>([null]);
+  const [hasNextPage, setHasNextPage] = useState(true);
+
+  const fetchFullEntries = async (page: number = 1, requestedItemsPerPage: number = itemsPerPage) => {
     setIsLoadingFull(true);
     try {
-      const data = await FirebaseService.getFullCollection(projectId, collection.name, itemsPerPage);
-      setFullEntries(data);
+      // Find the cursor for this page
+      const cursor = pageHistory[page - 1] || null;
+      const { entries, lastDoc } = await FirebaseService.getFullCollection(projectId, collection.name, requestedItemsPerPage, cursor);
+      
+      setFullEntries(entries);
+      setHasNextPage(entries.length === requestedItemsPerPage);
+      
+      // If we're going to the NEXT page that we haven't tracked yet, add its start cursor
+      if (page >= pageHistory.length && lastDoc) {
+        setPageHistory(prev => [...prev, lastDoc]);
+      }
+      
+      setCurrentPage(page);
     } catch (e) {
       console.error(e);
     } finally {
@@ -215,9 +232,33 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      fetchFullEntries();
+      // Reset pagination when collection changes or modal opens
+      setPageHistory([null]);
+      setCurrentPage(1);
+      fetchFullEntries(1, itemsPerPage);
     }
-  }, [isOpen, collection.name, itemsPerPage]);
+  }, [isOpen, collection.name]);
+
+  useEffect(() => {
+    if (isOpen && currentPage === 1) {
+       // Only auto-refetch if we're on first page when itemsPerPage changes
+       // otherwise it gets confusing with the pageHistory
+       setPageHistory([null]);
+       fetchFullEntries(1, itemsPerPage);
+    }
+  }, [itemsPerPage]);
+
+  const handleNextPage = () => {
+    if (hasNextPage) {
+      fetchFullEntries(currentPage + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      fetchFullEntries(currentPage - 1);
+    }
+  };
 
   const filteredEntries = (fullEntries.length > 0 ? fullEntries : collection.entries).filter(entry => {
     const searchStr = searchTerm.toLowerCase();
@@ -344,7 +385,36 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
             onToggleSelect={handleToggleSelect}
             onToggleSelectAll={handleToggleSelectAll}
             itemsPerPage={itemsPerPage}
+            showPagination={false}
           />
+        </div>
+
+        {/* Server-side Pagination Footer */}
+        <div className="mt-4 flex items-center justify-between bg-slate-900/30 p-3 rounded-lg border border-slate-800 shrink-0">
+          <div className="flex flex-col">
+            <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Current Page</div>
+            <div className="text-xs text-slate-300 font-mono">Page {currentPage} {collection.totalCount ? `of ${Math.ceil(collection.totalCount / itemsPerPage)}` : ''}</div>
+          </div>
+          <div className="flex items-center gap-2">
+             <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handlePrevPage} 
+              disabled={currentPage === 1 || isLoadingFull}
+              icon={ChevronLeft}
+             >
+               Prev
+             </Button>
+             <Button 
+              variant="brand" 
+              size="sm" 
+              onClick={handleNextPage} 
+              disabled={!hasNextPage || isLoadingFull}
+             >
+               Next Page
+               <ChevronRight className="w-4 h-4 ml-1.5" />
+             </Button>
+          </div>
         </div>
       </div>
 
@@ -685,6 +755,21 @@ const RulesEditor: React.FC<RulesEditorProps> = ({ project, onUpdate }) => {
   }, [project.id]);
 
   const handleSave = async () => {
+    // Basic JSON validation before saving
+    try {
+      const trimmed = rules.trim();
+      if (trimmed && !trimmed.startsWith('{')) {
+        throw new Error("Rules must be a JSON object starting with '{'");
+      }
+      JSON.parse(trimmed || "{}");
+    } catch (e: any) {
+      setAlertInfo({ 
+        title: "Invalid JSON", 
+        message: `Please check your rules format: ${e.message}` 
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       await onUpdate(rules);
@@ -1152,7 +1237,7 @@ export const Dashboard: React.FC = () => {
                         <Badge variant="info" className="shadow-[0_0_10px_rgba(56,189,248,0.2)] border-blue-500/30">Security</Badge>
                       </div>
                       <p className="text-xs text-slate-500 mb-3">
-                        Restrict API requests to specific Perchance generators. If empty, all <span className="text-slate-400">perchance.org</span> domains are allowed. You can enter just the generator name or the full URL.
+                        Restrict API requests to specific Perchance generators. If empty, all <span className="text-slate-400">perchance.org</span> domains are allowed. You can enter just your generator's name (slug) or the full URL. Our smart matching handles random subdomains automatically.
                       </p>
                       
                       <div className="flex flex-wrap gap-2 mb-3">
@@ -1243,7 +1328,7 @@ export const Dashboard: React.FC = () => {
                       ) : (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
                           {/* Analytics */}
-                          <div className="grid grid-cols-3 gap-4 mb-6">
+                          <div className="grid grid-cols-2 gap-4 mb-6">
                             <Card className="p-4 border-slate-700/50 bg-slate-900/50">
                               <div className="text-xs text-slate-500 uppercase">Total Reads</div>
                               <div className="text-2xl font-bold text-white mt-1">
@@ -1254,12 +1339,6 @@ export const Dashboard: React.FC = () => {
                               <div className="text-xs text-slate-500 uppercase">Total Writes</div>
                               <div className="text-2xl font-bold text-white mt-1">
                                 {selectedProject.stats?.writes?.toLocaleString() || 0}
-                              </div>
-                            </Card>
-                            <Card className="p-4 border-slate-700/50 bg-slate-900/50">
-                              <div className="text-xs text-slate-500 uppercase">Active Users</div>
-                              <div className="text-2xl font-bold text-white mt-1">
-                                {selectedProject.stats?.activeUsers?.toLocaleString() || 0}
                               </div>
                             </Card>
                           </div>

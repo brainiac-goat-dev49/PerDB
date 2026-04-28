@@ -30,7 +30,6 @@ export interface Project {
   stats?: {
     reads: number;
     writes: number;
-    activeUsers: number;
   };
   collections: Collection[];
   collectionList: string[];

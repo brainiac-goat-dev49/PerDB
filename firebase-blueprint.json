@@ -15,8 +15,7 @@
           "type": "object",
           "properties": {
             "reads": { "type": "number" },
-            "writes": { "type": "number" },
-            "activeUsers": { "type": "number" }
+            "writes": { "type": "number" }
           }
         },
         "createdAt": { "type": "string", "format": "date-time" },

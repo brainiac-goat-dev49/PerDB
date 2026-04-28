@@ -13,7 +13,9 @@ import {
   serverTimestamp,
   orderBy,
   limit,
-  getCountFromServer
+  getCountFromServer,
+  startAfter,
+  QueryDocumentSnapshot
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { Project, DBEntry, Collection } from '../types';
@@ -33,17 +35,13 @@ const mapDocToProject = (docSnap: any): Project => {
       allowPublicWrite: false,
       allowedOrigins: []
     },
-    rules: data.rules || `{
-  "global": {
-    ".read": "true",
-    ".write": "true"
-  },
-  "scores": {
-    ".read": "true",
-    ".write": "newData.score > 0"
-  }
-}`,
-    stats: data.stats || { reads: 0, writes: 0, activeUsers: 0 },
+    rules: typeof data.rules === 'string' 
+      ? data.rules 
+      : JSON.stringify(data.rules || {
+          "global": { ".read": "true", ".write": "true" },
+          "scores": { ".read": "true", ".write": "newData.score > 0" }
+        }, null, 2),
+    stats: data.stats || { reads: 0, writes: 0 },
     collections: [], // We fetch these on demand now
     collectionList: data.collectionList || [],
     createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
@@ -88,11 +86,28 @@ export const FirebaseService = {
     };
   },
 
-  getFullCollection: async (projectId: string, collectionName: string, limitCount: number = 50): Promise<DBEntry[]> => {
+  getFullCollection: async (
+    projectId: string, 
+    collectionName: string, 
+    limitCount: number = 50,
+    lastVisible: QueryDocumentSnapshot | null = null
+  ): Promise<{ entries: DBEntry[], lastDoc: QueryDocumentSnapshot | null }> => {
     const colRef = collection(db, `projects/${projectId}/collections/${collectionName}/docs`);
-    const q = query(colRef, orderBy('_created', 'desc'), limit(limitCount));
+    
+    let q;
+    if (lastVisible) {
+      q = query(colRef, orderBy('_created', 'desc'), startAfter(lastVisible), limit(limitCount));
+    } else {
+      q = query(colRef, orderBy('_created', 'desc'), limit(limitCount));
+    }
+    
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as DBEntry[];
+    const entries = snapshot.docs.map(d => ({ ...(d.data() as object), id: d.id })) as DBEntry[];
+    
+    return {
+      entries,
+      lastDoc: snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null
+    };
   },
 
   createProject: async (name: string): Promise<Project> => {

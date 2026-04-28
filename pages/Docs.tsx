@@ -424,7 +424,7 @@ class PerDB {
                      <Shield className="w-3 h-3 mr-2" /> Domain Locking
                    </h4>
                    <p className="text-xs text-slate-400">
-                     Protect your API key by restricting it to specific Perchance generators. Our smart system automatically handles Perchance's dynamic subdomains, so you can lock to a generator name or URL and it will work in both edit mode and full-page mode.
+                     Protect your API key by restricting it to specific Perchance generators. Our smart system automatically matches your generator name (slug) even when Perchance uses random subdomains. Just add your generator name or URL to the allowed list.
                    </p>
                  </div>
                  <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
@@ -516,8 +516,8 @@ scores.forEach(s => {
                </p>
                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
-                     <h4 className="text-slate-200 font-bold text-xs uppercase mb-2">View All</h4>
-                     <p className="text-xs text-slate-500">Open the full collection view to see every entry in a paginated list.</p>
+                     <h4 className="text-slate-200 font-bold text-xs uppercase mb-2">Full Pagination</h4>
+                     <p className="text-xs text-slate-500">Easily browse through thousands of entries with server-side pagination in the collection view.</p>
                   </div>
                   <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-lg">
                      <h4 className="text-slate-200 font-bold text-xs uppercase mb-2">Search</h4>
@@ -603,7 +603,7 @@ scores.forEach(s => {
                    <Shield className="w-3 h-3 mr-2" /> Domain Restriction
                  </h4>
                  <p className="text-xs text-slate-400">
-                   To prevent abuse and keep the service free, PerDB currently only accepts requests from projects hosted on <strong>perchance.org</strong>. We use smart normalization to ensure your domain locks work regardless of the random subdomains Perchance generates behind the scenes. Local development (localhost) is also supported.
+                   To prevent abuse, PerDB strictly enforces domain locking. We use <strong>Smart Slug Matching</strong> which extracts your generator's identity from Perchance's URLs. You can simply add your generator's name (e.g., <code>my-cool-generator</code>) to the allowed list, and we'll handle the rest, including random subdomains.
                  </p>
                </div>
                <p className="text-sm text-slate-500 italic">

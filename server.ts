@@ -97,13 +97,16 @@ function getDb() {
         credential: admin.credential.cert(serviceAccount)
       });
       console.log("Firebase Admin initialized");
-      db = getFirestore((firebaseConfig as any).firestoreDatabaseId);
+      
+      const dbId = (firebaseConfig as any).firestoreDatabaseId;
+      db = dbId ? getFirestore(dbId) : getFirestore();
     } catch (error) {
       console.error("Firebase Admin Init Error:", error);
       return null;
     }
   } else {
-    db = getFirestore((firebaseConfig as any).firestoreDatabaseId);
+    const dbId = (firebaseConfig as any).firestoreDatabaseId;
+    db = dbId ? getFirestore(dbId) : getFirestore();
   }
   return db;
 }
@@ -444,7 +447,7 @@ async function startServer() {
 
       // --- Domain Restriction (Enforced per project) ---
       const origin = req.headers.origin as string || '';
-      const referer = req.headers.referer as string || '';
+      const referer = (req.headers.referer || req.headers.referrer) as string || '';
       const isLocalhost = (origin + referer).includes('localhost') || (origin + referer).includes('127.0.0.1');
       
       // If in production, check allowed origins (Master Key bypasses this)
@@ -461,30 +464,50 @@ async function startServer() {
             
             // Format: [subdomain].perchance.org/[slug]...
             const parts = clean.split('/');
-            if (parts.length < 2) return null;
             
-            // The slug is the first part of the path, before any # or ?
-            return parts[1].split(/[?#]/)[0].toLowerCase();
+            // If it's the main domain perchance.org/slug
+            if (parts[0] === 'perchance.org' && parts.length >= 2) {
+              return parts[1].split(/[?#]/)[0].toLowerCase();
+            }
+            
+            // If it's a subdomain [slug].perchance.org
+            if (parts[0].endsWith('.perchance.org')) {
+              const sub = parts[0].replace('.perchance.org', '');
+              // If it's a random looking hex string of 32 chars, it's probably NOT the slug
+              if (sub.length === 32 && /^[a-f0-9]+$/.test(sub)) {
+                // Check if path has the slug anyway
+                return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
+              }
+              return sub.toLowerCase();
+            }
+
+            return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
           } catch (e) {
             return null;
           }
         };
 
-        const refererSlug = getPerchanceSlug(referer);
+        const refererSlug = getPerchanceSlug(referer) || getPerchanceSlug(origin);
         
         const isAllowed = allowedOrigins.length === 0 
           ? (origin + referer).includes('perchance.org') 
           : allowedOrigins.some((allowed: string) => {
+              const lowered = allowed.toLowerCase().trim();
+              if (!lowered) return false;
+
               // Exact match or includes check
-              if (origin.includes(allowed) || referer.includes(allowed)) return true;
+              if (origin.toLowerCase().includes(lowered) || referer.toLowerCase().includes(lowered)) return true;
               
               // Smart Perchance Slug check
-              if (refererSlug) {
-                const allowedSlug = allowed.includes('perchance.org') 
-                  ? getPerchanceSlug(allowed) 
-                  : allowed.toLowerCase().trim();
+              if (refererSlug || origin.includes('perchance.org') || referer.includes('perchance.org')) {
+                const allowedSlug = lowered.includes('perchance.org') 
+                  ? getPerchanceSlug(lowered) 
+                  : lowered; // If user just entered "my-generator"
                 
-                if (allowedSlug && refererSlug === allowedSlug) return true;
+                if (allowedSlug && (refererSlug === allowedSlug || referer.includes(`/${allowedSlug}`))) return true;
+                
+                // If they just added "perchance.org", allow all perchance
+                if (lowered === 'perchance.org' && (origin + referer).includes('perchance.org')) return true;
               }
               
               return false;
@@ -493,18 +516,32 @@ async function startServer() {
         if (!isAllowed) {
           console.warn(`Domain Restricted: Origin=${origin}, Referer=${referer} not in ${allowedOrigins.join(', ')}`);
           return res.status(403).json({ 
-            error: `Forbidden: This API Key is locked to specific domains. Ensure your generator name is added to the allowed list.` 
+            error: `Forbidden: This API Key is locked to specific domains. Current origin: ${origin || referer || 'Unknown'}. Ensure your generator name is added to the allowed list.`,
+            hint: `If using Perchance, try adding '${refererSlug || 'your-generator-name'}' or just 'perchance.org' to the allowed domains.`
           });
         }
       }
       
       let projectRules = {};
+      const rawRules = projectData.rules;
       try {
-        projectRules = typeof projectData.rules === 'string' 
-          ? JSON.parse(projectData.rules) 
-          : (projectData.rules || {});
+        if (typeof rawRules === 'string') {
+          const trimmed = rawRules.trim();
+          if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            projectRules = JSON.parse(trimmed);
+          } else {
+            // Not a JSON string, likely a legacy format or corrupted data
+            // We'll treat it as empty rules rather than throwing
+            projectRules = {};
+          }
+        } else {
+          projectRules = rawRules || {};
+        }
       } catch (e) {
-        console.error("Rules Parse Error:", e);
+        // Only log if it really looks like it should have been JSON but failed
+        if (typeof rawRules === 'string' && rawRules.trim().startsWith('{')) {
+          console.error("Rules Parse Error:", e);
+        }
         projectRules = {};
       }
 

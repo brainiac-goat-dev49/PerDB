@@ -205,19 +205,78 @@ app.all('*all', async (req, res) => {
     const isMasterRequest = !!(secretKey && secretKey === projectData.secretKey);
 
     // Domain Check
-    const referer = (req.headers.referer || req.headers.referrer) as string;
-    const origin = req.headers.origin as string;
+    const referer = (req.headers.referer || req.headers.referrer) as string || '';
+    const origin = req.headers.origin as string || '';
     const isLocal = process.env.NODE_ENV !== 'production';
     const isOurDomain = referer && (referer.includes('koyeb.app') || referer.includes('run.app') || referer.includes('ai.studio'));
     
     if (!isLocal && !isOurDomain && !isMasterRequest) {
       const allowedOrigins = projectData.permissions?.allowedOrigins || [];
+      
+      // Helper to extract perchance slug
+      const getPerchanceSlug = (url: string) => {
+        if (!url) return null;
+        try {
+          // Remove protocol
+          const clean = url.replace(/^https?:\/\//, '');
+          if (!clean.includes('perchance.org')) return null;
+          
+          // Format: [subdomain].perchance.org/[slug]...
+          const parts = clean.split('/');
+          
+          // If it's the main domain perchance.org/slug
+          if (parts[0] === 'perchance.org' && parts.length >= 2) {
+            return parts[1].split(/[?#]/)[0].toLowerCase();
+          }
+          
+          // If it's a subdomain [slug].perchance.org
+          if (parts[0].endsWith('.perchance.org')) {
+            const sub = parts[0].replace('.perchance.org', '');
+            // If it's a random looking hex string of 32 chars, it's probably NOT the slug
+            if (sub.length === 32 && /^[a-f0-9]+$/.test(sub)) {
+              // Check if path has the slug anyway
+              return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
+            }
+            return sub.toLowerCase();
+          }
+
+          return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
+        } catch (e) {
+          return null;
+        }
+      };
+
+      const refererSlug = getPerchanceSlug(referer) || getPerchanceSlug(origin);
+      
       const isAllowed = allowedOrigins.length === 0 
         ? (referer || origin || '').includes('perchance.org')
-        : allowedOrigins.some((o: string) => (referer || origin || '').includes(o));
+        : allowedOrigins.some((allowed: string) => {
+            const lowered = allowed.toLowerCase().trim();
+            if (!lowered) return false;
+
+            // Exact match or includes check
+            if (origin.toLowerCase().includes(lowered) || referer.toLowerCase().includes(lowered)) return true;
+            
+            // Smart Perchance Slug check
+            if (refererSlug || origin.includes('perchance.org') || referer.includes('perchance.org')) {
+              const allowedSlug = lowered.includes('perchance.org') 
+                ? getPerchanceSlug(lowered) 
+                : lowered; // If user just entered "my-generator"
+              
+              if (allowedSlug && (refererSlug === allowedSlug || referer.includes(`/${allowedSlug}`))) return true;
+              
+              // If they just added "perchance.org", allow all perchance
+              if (lowered === 'perchance.org' && (origin + referer).includes('perchance.org')) return true;
+            }
+            
+            return false;
+          });
 
       if (!isAllowed) {
-        return res.status(403).json({ error: 'Domain Restricted' });
+        return res.status(403).json({ 
+          error: `Forbidden: This API Key is locked to specific domains. Current origin: ${origin || referer || 'Unknown'}. Ensure your generator name is added to the allowed list.`,
+          hint: `If using Perchance, try adding '${refererSlug || 'your-generator-name'}' or just 'perchance.org' to the allowed domains.`
+        });
       }
     }
 
@@ -234,9 +293,25 @@ app.all('*all', async (req, res) => {
        });
     }
 
-    const projectRules = typeof projectData.rules === 'string' 
-      ? JSON.parse(projectData.rules) 
-      : (projectData.rules || {});
+    let projectRules = {};
+    const rawRules = projectData.rules;
+    try {
+      if (typeof rawRules === 'string') {
+        const trimmed = rawRules.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          projectRules = JSON.parse(trimmed);
+        } else {
+          projectRules = {};
+        }
+      } else {
+        projectRules = rawRules || {};
+      }
+    } catch (e) {
+      if (typeof rawRules === 'string' && rawRules.trim().startsWith('{')) {
+        console.error("Rules Parse Error:", e);
+      }
+      projectRules = {};
+    }
 
     const collectionName = (req.query.collection as string) || 'default';
     const docPath = `projects/${projectId}/collections/${collectionName}/docs`;

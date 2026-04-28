@@ -28,16 +28,30 @@ const AppContent: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         // Sync user to Firestore
-        await FirebaseService.syncUser();
+        try {
+          await FirebaseService.syncUser();
+        } catch (e: any) {
+          console.error("Failed to sync user:", e);
+          if (e.message?.includes('Connection failed') || e.message?.includes('offline')) {
+            // This is a known issue in some environments, don't crash the app
+            console.warn("Firestore connection not available yet, will retry later.");
+          }
+        }
         
         // Listen for user document changes (to handle real-time banning)
-        userUnsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
-          if (docSnap.exists() && docSnap.data().isBanned) {
-            signOut(auth);
-            alert("Your account has been suspended. Please contact support if you believe this is an error.");
-            navigate('/');
-          }
-        });
+        try {
+          userUnsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+            if (docSnap.exists() && docSnap.data().isBanned) {
+              signOut(auth);
+              alert("Your account has been suspended. Please contact support if you believe this is an error.");
+              navigate('/');
+            }
+          }, (error) => {
+            console.warn("User snapshot listener failed (likely connection issue):", error);
+          });
+        } catch (e) {
+          console.error("Failed to setup user snapshot listener:", e);
+        }
       } else {
         if (userUnsubscribe) userUnsubscribe();
       }
