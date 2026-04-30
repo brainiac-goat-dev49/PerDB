@@ -458,26 +458,32 @@ async function startServer() {
         const getPerchanceSlug = (url: string) => {
           if (!url) return null;
           try {
-            // Remove protocol
-            const clean = url.replace(/^https?:\/\//, '');
+            // Remove protocol and trailing slashes
+            let clean = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
             if (!clean.includes('perchance.org')) return null;
             
-            // Format: [subdomain].perchance.org/[slug]...
+            // Format: [subdomain].perchance.org/[slug]... or perchance.org/[slug]
             const parts = clean.split('/');
             
-            // If it's the main domain perchance.org/slug
-            if (parts[0] === 'perchance.org' && parts.length >= 2) {
-              return parts[1].split(/[?#]/)[0].toLowerCase();
+            // 1. If it's the main domain perchance.org/slug
+            if (parts[0] === 'perchance.org') {
+              return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
             }
             
-            // If it's a subdomain [slug].perchance.org
+            // 2. If it's a subdomain [something].perchance.org
             if (parts[0].endsWith('.perchance.org')) {
               const sub = parts[0].replace('.perchance.org', '');
-              // If it's a random looking hex string of 32 chars, it's probably NOT the slug
-              if (sub.length === 32 && /^[a-f0-9]+$/.test(sub)) {
-                // Check if path has the slug anyway
+              
+              // Perchance uses 32-char hex subdomains for random URLs
+              // If it's NOT a 32-char hex, the subdomain is likely the slug
+              const isRandomSubdomain = sub.length === 32 && /^[a-f0-9]+$/.test(sub);
+              
+              if (isRandomSubdomain) {
+                // Look in the path for the real slug
                 return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
               }
+              
+              // Otherwise, the subdomain is the slug
               return sub.toLowerCase();
             }
 
@@ -488,6 +494,7 @@ async function startServer() {
         };
 
         const refererSlug = getPerchanceSlug(referer) || getPerchanceSlug(origin);
+        const originSlug = getPerchanceSlug(origin); // Specifically for origin
         
         const isAllowed = allowedOrigins.length === 0 
           ? (origin + referer).includes('perchance.org') 
@@ -495,20 +502,22 @@ async function startServer() {
               const lowered = allowed.toLowerCase().trim();
               if (!lowered) return false;
 
-              // Exact match or includes check
+              // 1. Direct match (for non-perchance or exact origins)
               if (origin.toLowerCase().includes(lowered) || referer.toLowerCase().includes(lowered)) return true;
               
-              // Smart Perchance Slug check
-              if (refererSlug || origin.includes('perchance.org') || referer.includes('perchance.org')) {
-                const allowedSlug = lowered.includes('perchance.org') 
-                  ? getPerchanceSlug(lowered) 
-                  : lowered; // If user just entered "my-generator"
-                
-                if (allowedSlug && (refererSlug === allowedSlug || referer.includes(`/${allowedSlug}`))) return true;
-                
-                // If they just added "perchance.org", allow all perchance
-                if (lowered === 'perchance.org' && (origin + referer).includes('perchance.org')) return true;
+              // 2. Smart Perchance Matching
+              const allowedSlug = lowered.includes('perchance.org') 
+                ? getPerchanceSlug(lowered) 
+                : lowered; // If user just entered "my-generator"
+              
+              if (allowedSlug) {
+                // Match against referer slug, origin slug, or direct URL inclusion
+                if (refererSlug === allowedSlug || originSlug === allowedSlug) return true;
+                if (referer.includes(`/${allowedSlug}/`) || referer.endsWith(`/${allowedSlug}`)) return true;
               }
+              
+              // 3. Fallback: If they just added "perchance.org", allow all perchance
+              if (lowered === 'perchance.org' && (origin + referer).includes('perchance.org')) return true;
               
               return false;
             });

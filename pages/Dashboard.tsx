@@ -1038,6 +1038,38 @@ export const Dashboard: React.FC = () => {
   };
 
   const [newOrigin, setNewOrigin] = useState('');
+
+  // Helper to extract perchance slug for UI preview
+  const getPerchanceSlug = (url: string) => {
+    if (!url) return null;
+    try {
+      // Remove protocol and trailing slashes
+      let clean = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      if (!clean.includes('perchance.org')) return null;
+      
+      const parts = clean.split('/');
+      
+      // 1. If it's the main domain perchance.org/slug
+      if (parts[0] === 'perchance.org') {
+        return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
+      }
+      
+      // 2. If it's a subdomain [slug].perchance.org
+      if (parts[0].endsWith('.perchance.org')) {
+        const sub = parts[0].replace('.perchance.org', '');
+        const isRandomSubdomain = sub.length === 32 && /^[a-f0-9]+$/.test(sub);
+        if (isRandomSubdomain) {
+          return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
+        }
+        return sub.toLowerCase();
+      }
+      return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const detectedSlug = getPerchanceSlug(newOrigin);
   const [editingName, setEditingName] = useState('');
 
   useEffect(() => {
@@ -1260,35 +1292,45 @@ export const Dashboard: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex gap-2">
-                        <Input 
-                          placeholder="e.g. my-generator-name or perchance.org/my-gen" 
-                          className="flex-1 h-9 text-xs"
-                          value={newOrigin}
-                          onChange={(e) => setNewOrigin(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && newOrigin.trim()) {
-                              const next = [...selectedProject.permissions.allowedOrigins, newOrigin.trim()];
-                              handleUpdateProject({ permissions: { ...selectedProject.permissions, allowedOrigins: next } });
-                              setNewOrigin('');
-                            }
-                          }}
-                        />
-                        <Button 
-                          size="sm" 
-                          variant="secondary" 
-                          className="h-9"
-                          disabled={!newOrigin.trim()}
-                          onClick={() => {
-                            if (newOrigin.trim()) {
-                              const next = [...selectedProject.permissions.allowedOrigins, newOrigin.trim()];
-                              handleUpdateProject({ permissions: { ...selectedProject.permissions, allowedOrigins: next } });
-                              setNewOrigin('');
-                            }
-                          }}
-                        >
-                          Add
-                        </Button>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <Input 
+                            placeholder="e.g. my-generator-name or perchance.org/my-gen" 
+                            className="flex-1 h-9 text-xs"
+                            value={newOrigin}
+                            onChange={(e) => setNewOrigin(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && newOrigin.trim()) {
+                                const next = [...selectedProject.permissions.allowedOrigins, newOrigin.trim()];
+                                handleUpdateProject({ permissions: { ...selectedProject.permissions, allowedOrigins: next } });
+                                setNewOrigin('');
+                              }
+                            }}
+                          />
+                          <Button 
+                            size="sm" 
+                            variant="secondary" 
+                            className="h-9"
+                            disabled={!newOrigin.trim()}
+                            onClick={() => {
+                              if (newOrigin.trim()) {
+                                const next = [...selectedProject.permissions.allowedOrigins, newOrigin.trim()];
+                                handleUpdateProject({ permissions: { ...selectedProject.permissions, allowedOrigins: next } });
+                                setNewOrigin('');
+                              }
+                            }}
+                          >
+                            Add
+                          </Button>
+                        </div>
+                        {detectedSlug && (
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-brand-500/5 rounded border border-brand-500/20 animate-in fade-in slide-in-from-top-1 duration-300">
+                            <Play className="w-3 h-3 text-brand-400 rotate-90" />
+                            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Matched as:</span>
+                            <span className="text-xs font-mono text-brand-400 font-bold">{detectedSlug}</span>
+                            <span className="text-[10px] text-slate-500 italic ml-auto">Works for all random subdomains</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
