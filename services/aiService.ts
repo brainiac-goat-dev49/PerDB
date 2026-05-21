@@ -12,7 +12,7 @@ export const generateCodeSnippet = async (prompt: string): Promise<string> => {
     
     const systemInstruction = `
       You are an expert developer for PerDB, a database platform for Perchance.org generators.
-      PerDB is a live platform hosted at 'https://perdb.koyeb.app'.
+      PerDB is a live database platform that can be hosted on services like Railway or Koyeb.
       PerDB helps Perchance users add persistent cloud storage, real-time sync, and leaderboards to their generators.
       
       The application consists of:

@@ -81,10 +81,10 @@ function parseServiceAccount(saEnv: string) {
 }
 
 function getDb() {
-  if (db) return db;
+  try {
+    if (db) return db;
 
-  if (admin.apps.length === 0) {
-    try {
+    if (admin.apps.length === 0) {
       const saEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
       if (!saEnv) {
         console.warn("FIREBASE_SERVICE_ACCOUNT is missing. API will be limited.");
@@ -100,15 +100,15 @@ function getDb() {
       
       const dbId = (firebaseConfig as any).firestoreDatabaseId;
       db = dbId ? getFirestore(dbId) : getFirestore();
-    } catch (error) {
-      console.error("Firebase Admin Init Error:", error);
-      return null;
+    } else {
+      const dbId = (firebaseConfig as any).firestoreDatabaseId;
+      db = dbId ? getFirestore(dbId) : getFirestore();
     }
-  } else {
-    const dbId = (firebaseConfig as any).firestoreDatabaseId;
-    db = dbId ? getFirestore(dbId) : getFirestore();
+    return db;
+  } catch (error) {
+    console.error("Firebase Admin/Firestore Init Error:", error);
+    return null;
   }
-  return db;
 }
 
 // Simple in-memory cache for GET requests
@@ -366,7 +366,7 @@ async function startServer() {
   });
 
   // --- PerDB API v1 ---
-  app.all('/api', async (req, res) => {
+  app.all(['/api', '/api/'], async (req, res) => {
     // Debug endpoint
     if (req.query.debug === 'true') {
       return res.json({
@@ -783,6 +783,20 @@ async function startServer() {
       console.error("API Error:", error);
       res.status(500).json({ error: 'Internal Server Error', details: error.message });
     }
+  });
+
+  // API error handler - ensure all errors under /api are returned as JSON, not HTML
+  app.use('/api', (err: any, req: any, res: any, next: any) => {
+    console.error("API Internal Error:", err);
+    res.status(err.status || 500).json({
+      error: err.message || 'Internal Server Error',
+      details: err.details || undefined
+    });
+  });
+
+  // API 404 handler - handle unmatched /api paths with JSON, instead of falling through to Vite/static wildcard
+  app.use('/api', (req, res) => {
+    res.status(404).json({ error: 'API route not found' });
   });
 
   // Vite middleware for development

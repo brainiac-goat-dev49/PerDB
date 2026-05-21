@@ -80,10 +80,10 @@ function parseServiceAccount(saEnv: string) {
 }
 
 function getDb() {
-  if (db) return db;
+  try {
+    if (db) return db;
 
-  if (admin.apps.length === 0) {
-    try {
+    if (admin.apps.length === 0) {
       const saEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
       if (!saEnv) {
         console.error("FIREBASE_SERVICE_ACCOUNT is missing");
@@ -97,14 +97,14 @@ function getDb() {
       });
       console.log("Firebase Admin initialized");
       db = getFirestore((firebaseConfig as any).firestoreDatabaseId);
-    } catch (error) {
-      console.error("Firebase Admin Init Error:", error);
-      return null;
+    } else {
+      db = getFirestore((firebaseConfig as any).firestoreDatabaseId);
     }
-  } else {
-    db = getFirestore((firebaseConfig as any).firestoreDatabaseId);
+    return db;
+  } catch (error) {
+    console.error("Firebase Admin/Firestore Init Error:", error);
+    return null;
   }
-  return db;
 }
 
 // Helper to evaluate rules
@@ -208,7 +208,13 @@ app.all('*all', async (req, res) => {
     const referer = (req.headers.referer || req.headers.referrer) as string || '';
     const origin = req.headers.origin as string || '';
     const isLocal = process.env.NODE_ENV !== 'production';
-    const isOurDomain = referer && (referer.includes('koyeb.app') || referer.includes('run.app') || referer.includes('ai.studio'));
+    const isOurDomain = referer && (
+      referer.includes('koyeb.app') || 
+      referer.includes('railway.app') || 
+      referer.includes('run.app') || 
+      referer.includes('ai.studio') ||
+      (req.headers.host && referer.includes(req.headers.host))
+    );
     
     if (!isLocal && !isOurDomain && !isMasterRequest) {
       const allowedOrigins = projectData.permissions?.allowedOrigins || [];
