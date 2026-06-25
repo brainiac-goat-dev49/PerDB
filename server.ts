@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import firebaseConfig from './firebase-applet-config.json';
+import { PostgresService, initializePostgres } from './services/postgresService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -129,22 +130,34 @@ const statsBuffer = new Map<string, { reads: number, writes: number }>();
 const STATS_FLUSH_INTERVAL = 60000; // Flush every 1 minute
 
 function flushStats() {
-  const firestore = getDb();
-  if (!firestore || statsBuffer.size === 0) return;
+  if (statsBuffer.size === 0) return;
 
   console.log(`[Stats] Flushing buffered stats for ${statsBuffer.size} projects...`);
   
-  statsBuffer.forEach(async (stats, projectId) => {
-    try {
-      await firestore.collection('projects').doc(projectId).update({
-        'stats.reads': admin.firestore.FieldValue.increment(stats.reads),
-        'stats.writes': admin.firestore.FieldValue.increment(stats.writes),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    } catch (e) {
-      console.error(`[Stats] Failed to flush stats for project ${projectId}:`, e);
-    }
-  });
+  if (PostgresService.isActive()) {
+    statsBuffer.forEach(async (stats, projectId) => {
+      try {
+        await PostgresService.incrementStats(projectId, stats.reads, stats.writes);
+      } catch (e) {
+        console.error(`[Stats] Failed to flush Postgres stats for project ${projectId}:`, e);
+      }
+    });
+  } else {
+    const firestore = getDb();
+    if (!firestore) return;
+
+    statsBuffer.forEach(async (stats, projectId) => {
+      try {
+        await firestore.collection('projects').doc(projectId).update({
+          'stats.reads': admin.firestore.FieldValue.increment(stats.reads),
+          'stats.writes': admin.firestore.FieldValue.increment(stats.writes),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (e) {
+        console.error(`[Stats] Failed to flush Firestore stats for project ${projectId}:`, e);
+      }
+    });
+  }
   
   statsBuffer.clear();
 }
@@ -156,6 +169,18 @@ async function startServer() {
   console.log("--- Starting PerDB Server ---");
   console.log(`Node Version: ${process.version}`);
   console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+
+  if (PostgresService.isActive()) {
+    console.log("[Postgres] Database URL detected. Initializing PostgreSQL...");
+    const ok = await initializePostgres();
+    if (ok) {
+      console.log("[Postgres] Successfully connected and initialized Postgres!");
+    } else {
+      console.warn("[Postgres] Failed to initialize Postgres. Falling back to Firebase.");
+    }
+  } else {
+    console.log("[Postgres] No DATABASE_URL detected. Running in standard Firebase mode.");
+  }
   
   const app = express();
   const PORT = process.env.PORT || 3000;
@@ -170,6 +195,390 @@ async function startServer() {
   // API routes go here
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", env: process.env.NODE_ENV });
+  });
+
+  // Helper to authenticate client Firebase user on the server
+  async function getAuthenticatedUser(req: any) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw new Error('Unauthorized: Missing token');
+    }
+    const token = authHeader.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    return decodedToken;
+  }
+
+  // --- Configuration and Dashboard Proxies ---
+  app.get("/api/config", (req, res) => {
+    res.json({ usePostgres: PostgresService.isActive() });
+  });
+
+  app.post("/api/user/sync", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      const { uid, email, display_name, name, displayName, photo_url, photoURL } = decoded;
+      const userEmail = email || '';
+      const userDisplayName = displayName || name || display_name || '';
+      const userPhotoURL = photoURL || photo_url || '';
+
+      if (PostgresService.isActive()) {
+        const isBanned = await PostgresService.isUserBanned(uid);
+        if (isBanned) {
+          return res.status(403).json({ error: 'This account has been permanently banned from PerDB.' });
+        }
+        await PostgresService.syncUser({
+          id: uid,
+          email: userEmail,
+          displayName: userDisplayName,
+          photoURL: userPhotoURL,
+          role: userEmail === 'testimonyfresh49@gmail.com' ? 'admin' : 'user'
+        });
+      } else {
+        const firestore = getDb();
+        if (!firestore) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        const bannedSnap = await firestore.collection('banned_emails').doc(userEmail).get();
+        if (bannedSnap.exists) {
+          return res.status(403).json({ error: 'This account has been permanently banned from PerDB.' });
+        }
+
+        const userRef = firestore.collection('users').doc(uid);
+        const userSnap = await userRef.get();
+        if (!userSnap.exists) {
+          await userRef.set({
+            email: userEmail,
+            displayName: userDisplayName,
+            photoURL: userPhotoURL,
+            role: userEmail === 'testimonyfresh49@gmail.com' ? 'admin' : 'user',
+            isBanned: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastLogin: admin.firestore.FieldValue.serverTimestamp()
+          });
+        } else {
+          await userRef.update({
+            lastLogin: admin.firestore.FieldValue.serverTimestamp(),
+            email: userEmail,
+            displayName: userDisplayName,
+            photoURL: userPhotoURL
+          });
+        }
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Sync User Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to sync user' });
+    }
+  });
+
+  app.get("/api/projects", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      if (PostgresService.isActive()) {
+        const projects = await PostgresService.getProjectsByOwner(decoded.uid);
+        res.json(projects);
+      } else {
+        const firestore = getDb();
+        if (!firestore) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        const q = await firestore.collection('projects').where('ownerId', '==', decoded.uid).get();
+        const projects = q.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ownerId: data.ownerId,
+            name: data.name,
+            apiKey: data.apiKey,
+            secretKey: data.secretKey,
+            permissions: data.permissions || { allowPublicRead: true, allowPublicWrite: false, allowedOrigins: [] },
+            rules: typeof data.rules === 'string' ? data.rules : JSON.stringify(data.rules || {}, null, 2),
+            stats: data.stats || { reads: 0, writes: 0 },
+            collections: [],
+            collectionList: data.collectionList || [],
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
+          };
+        });
+        res.json(projects);
+      }
+    } catch (error: any) {
+      console.error("Get Projects Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to fetch projects' });
+    }
+  });
+
+  app.post("/api/projects", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      const { name } = req.body;
+      if (!name) return res.status(400).json({ error: 'Missing project name' });
+
+      const newProjId = Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
+      const apiKey = `pk_live_${Math.random().toString(36).substr(2, 16)}`;
+      const secretKey = `sk_live_${Math.random().toString(36).substr(2, 16)}`;
+
+      const newProject = {
+        id: newProjId,
+        ownerId: decoded.uid,
+        name,
+        apiKey,
+        secretKey,
+        permissions: {
+          allowPublicRead: true,
+          allowPublicWrite: false,
+          allowedOrigins: ['perchance.org']
+        },
+        rules: `{
+  "global": {
+    ".read": "true",
+    ".write": "true"
+  },
+  "scores": {
+    ".read": "true",
+    ".write": "newData.score > 0"
+  }
+}`,
+        collectionList: [],
+        stats: { reads: 0, writes: 0 }
+      };
+
+      if (PostgresService.isActive()) {
+        const existing = await PostgresService.getProjectsByOwner(decoded.uid);
+        if (existing.length >= 5) {
+          return res.status(400).json({ error: 'Project Limit Reached: You can only have up to 5 projects. Please delete an existing project to create a new one.' });
+        }
+        const created = await PostgresService.createProject(newProject);
+        res.json(created);
+      } else {
+        const firestore = getDb();
+        if (!firestore) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        const existing = await firestore.collection('projects').where('ownerId', '==', decoded.uid).get();
+        if (existing.size >= 5) {
+          return res.status(400).json({ error: 'Project Limit Reached: You can only have up to 5 projects. Please delete an existing project to create a new one.' });
+        }
+
+        await firestore.collection('projects').doc(newProjId).set({
+          ...newProject,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        res.json({
+          ...newProject,
+          collections: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (error: any) {
+      console.error("Create Project Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to create project' });
+    }
+  });
+
+  app.put("/api/projects/:id", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      const { id } = req.params;
+      const { name, permissions, rules, stats, collectionList } = req.body;
+
+      const cleanData: any = {};
+      if (name !== undefined) cleanData.name = name;
+      if (permissions !== undefined) cleanData.permissions = permissions;
+      if (rules !== undefined) cleanData.rules = rules;
+      if (stats !== undefined) cleanData.stats = stats;
+      if (collectionList !== undefined) cleanData.collectionList = collectionList;
+
+      if (PostgresService.isActive()) {
+        const proj = await PostgresService.getProjectById(id);
+        if (!proj || proj.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+        await PostgresService.updateProject(id, cleanData);
+      } else {
+        const firestore = getDb();
+        if (!firestore) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        const docRef = firestore.collection('projects').doc(id);
+        const snap = await docRef.get();
+        if (!snap.exists || snap.data()?.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+        await docRef.update({
+          ...cleanData,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update Project Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to update project' });
+    }
+  });
+
+  app.delete("/api/projects/:id", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      const { id } = req.params;
+
+      if (PostgresService.isActive()) {
+        const proj = await PostgresService.getProjectById(id);
+        if (!proj || proj.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+        await PostgresService.deleteProject(id);
+      } else {
+        const firestore = getDb();
+        if (!firestore) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        const docRef = firestore.collection('projects').doc(id);
+        const snap = await docRef.get();
+        if (!snap.exists || snap.data()?.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+        await docRef.delete();
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete Project Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to delete project' });
+    }
+  });
+
+  app.get("/api/projects/:id/collections", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      const { id } = req.params;
+
+      let collectionList: string[] = [];
+
+      if (PostgresService.isActive()) {
+        const proj = await PostgresService.getProjectById(id);
+        if (!proj || proj.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+        collectionList = proj.collectionList || [];
+      } else {
+        const firestore = getDb();
+        if (!firestore) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        const snap = await firestore.collection('projects').doc(id).get();
+        if (!snap.exists || snap.data()?.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+        collectionList = snap.data()?.collectionList || [];
+      }
+
+      const colNames = Array.from(new Set(collectionList));
+      const cols = colNames.map(name => ({
+        name,
+        entries: [],
+        totalCount: 0,
+        hasLoaded: false,
+        isLoading: false
+      }));
+      res.json(cols);
+    } catch (error: any) {
+      console.error("Get Project Collections Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to get collections' });
+    }
+  });
+
+  app.get("/api/projects/:id/collections/:colName", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      const { id, colName } = req.params;
+
+      if (PostgresService.isActive()) {
+        const proj = await PostgresService.getProjectById(id);
+        if (!proj || proj.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+        const entries = await PostgresService.getDocuments(id, colName, 10);
+        const totalCount = await PostgresService.getCollectionCount(id, colName);
+        res.json({
+          entries,
+          totalCount,
+          hasLoaded: true
+        });
+      } else {
+        const firestore = getDb();
+        if (!firestore) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        const snap = await firestore.collection('projects').doc(id).get();
+        if (!snap.exists || snap.data()?.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+
+        const colRef = firestore.collection(`projects/${id}/collections/${colName}/docs`);
+        const snapshot = await colRef.orderBy('_created', 'desc').limit(10).get();
+        const countSnap = await colRef.count().get();
+        
+        const entries = snapshot.docs.map(doc => {
+          const d = doc.data();
+          if (d._created && d._created.toDate) {
+            d._created = d._created.toDate().toISOString();
+          }
+          return { id: doc.id, ...d };
+        });
+
+        res.json({
+          entries,
+          totalCount: countSnap.data().count,
+          hasLoaded: true
+        });
+      }
+    } catch (error: any) {
+      console.error("Get Collection Preview Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to get collection preview' });
+    }
+  });
+
+  app.get("/api/projects/:id/collections/:colName/full", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      const { id, colName } = req.params;
+      const limitCount = parseInt(req.query.limit as string) || 50;
+
+      if (PostgresService.isActive()) {
+        const proj = await PostgresService.getProjectById(id);
+        if (!proj || proj.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+        const entries = await PostgresService.getDocuments(id, colName, limitCount);
+        res.json({
+          entries,
+          lastDoc: null
+        });
+      } else {
+        const firestore = getDb();
+        if (!firestore) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        const snap = await firestore.collection('projects').doc(id).get();
+        if (!snap.exists || snap.data()?.ownerId !== decoded.uid) {
+          return res.status(403).json({ error: 'Forbidden or Project not found' });
+        }
+
+        const colRef = firestore.collection(`projects/${id}/collections/${colName}/docs`);
+        const snapshot = await colRef.orderBy('_created', 'desc').limit(limitCount).get();
+        
+        const entries = snapshot.docs.map(doc => {
+          const d = doc.data();
+          if (d._created && d._created.toDate) {
+            d._created = d._created.toDate().toISOString();
+          }
+          return { id: doc.id, ...d };
+        });
+
+        res.json({
+          entries,
+          lastDoc: null
+        });
+      }
+    } catch (error: any) {
+      console.error("Get Full Collection Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to get full collection' });
+    }
   });
 
   // --- Admin API ---
@@ -387,7 +796,7 @@ async function startServer() {
       }
 
       const firestore = getDb();
-      if (!firestore) {
+      if (!firestore && !PostgresService.isActive()) {
         return res.status(500).json({ 
           error: 'Firebase Admin not initialized. Check your environment variables (FIREBASE_SERVICE_ACCOUNT).' 
         });
@@ -404,29 +813,40 @@ async function startServer() {
       // 2. Lookup Project by API Key (with Cache)
       const apiKeyStr = apiKey as string;
       const cachedProject = projectCache.get(apiKeyStr);
-      let projectDoc;
+      let projectData: any;
+      let projectId: string;
 
       if (cachedProject && (Date.now() - cachedProject.timestamp < PROJECT_CACHE_TTL)) {
-        projectDoc = cachedProject.doc;
+        projectData = cachedProject.doc;
+        projectId = projectData.id;
       } else {
-        const projectsSnap = await firestore.collection('projects')
-          .where('apiKey', '==', apiKeyStr)
-          .limit(1)
-          .get();
+        if (PostgresService.isActive()) {
+          const project = await PostgresService.getProjectByApiKey(apiKeyStr);
+          if (!project) {
+            return res.status(403).json({ error: 'Invalid API Key' });
+          }
+          projectData = project;
+          projectId = project.id;
+          projectCache.set(apiKeyStr, { doc: project, timestamp: Date.now() });
+        } else {
+          const projectsSnap = await firestore!.collection('projects')
+            .where('apiKey', '==', apiKeyStr)
+            .limit(1)
+            .get();
 
-        if (projectsSnap.empty) {
-          return res.status(403).json({ error: 'Invalid API Key' });
+          if (projectsSnap.empty) {
+            return res.status(403).json({ error: 'Invalid API Key' });
+          }
+          const doc = projectsSnap.docs[0];
+          projectData = { id: doc.id, ...doc.data() };
+          projectId = doc.id;
+          projectCache.set(apiKeyStr, { doc: projectData, timestamp: Date.now() });
         }
-        projectDoc = projectsSnap.docs[0];
-        projectCache.set(apiKeyStr, { doc: projectDoc, timestamp: Date.now() });
       }
-
-      const projectId = projectDoc.id;
-      const projectData = projectDoc.data();
       
       // --- Rate Limiting ---
       const now = Date.now();
-      const limitData = rateLimit.get(apiKey) || { count: 0, lastReset: now };
+      const limitData = rateLimit.get(apiKeyStr) || { count: 0, lastReset: now };
       
       if (now - limitData.lastReset > RATE_LIMIT_WINDOW) {
         limitData.count = 0;
@@ -434,7 +854,7 @@ async function startServer() {
       }
       
       limitData.count++;
-      rateLimit.set(apiKey, limitData);
+      rateLimit.set(apiKeyStr, limitData);
       
       if (limitData.count > MAX_REQUESTS_PER_WINDOW && !secretKey) {
         return res.status(429).json({ 
@@ -585,8 +1005,8 @@ async function startServer() {
       }
 
       // Helper to invalidate cache
-      const invalidateCache = (projectId: string, collectionName: string) => {
-        const prefix = `${projectId}:${collectionName}:`;
+      const invalidateCache = (projId: string, colName: string) => {
+        const prefix = `${projId}:${colName}:`;
         for (const key of getCache.keys()) {
           if (key.startsWith(prefix)) {
             getCache.delete(key);
@@ -604,40 +1024,48 @@ async function startServer() {
           return res.status(403).json({ error: 'Permission Denied' });
         }
         
-        const docRef = await firestore.collection(docPath).add({
-          ...payload,
-          _created: admin.firestore.FieldValue.serverTimestamp()
-        });
+        let docId;
+        if (PostgresService.isActive()) {
+          docId = Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
+          await PostgresService.addDocument(projectId, collectionName, docId, payload);
+          projectCache.delete(apiKeyStr);
+        } else {
+          const docRef = await firestore!.collection(docPath).add({
+            ...payload,
+            _created: admin.firestore.FieldValue.serverTimestamp()
+          });
+          docId = docRef.id;
+
+          if (!projectData.collectionList?.includes(collectionName) || (new Set(projectData.collectionList || []).size !== (projectData.collectionList || []).length)) {
+             const currentList = projectData.collectionList || [];
+             const newList = Array.from(new Set([...currentList, collectionName]));
+             
+             // Update project metadata
+             await firestore!.collection('projects').doc(projectId).update({
+               collectionList: newList,
+               updatedAt: admin.firestore.FieldValue.serverTimestamp()
+             });
+
+             // Explicitly create the collection document so it's not a "phantom" in Firestore console
+             await firestore!.doc(`projects/${projectId}/collections/${collectionName}`).set({
+               name: collectionName,
+               updatedAt: admin.firestore.FieldValue.serverTimestamp()
+             }, { merge: true });
+
+             // Clear project cache to reflect new collection list
+             projectCache.delete(apiKeyStr);
+          }
+        }
 
         // Invalidate cache
         invalidateCache(projectId, collectionName);
 
-        // Update collection list metadata and stats (Buffered)
+        // Update stats (Buffered)
         const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
         stats.writes++;
         statsBuffer.set(projectId, stats);
 
-        if (!projectData.collectionList?.includes(collectionName) || (new Set(projectData.collectionList || []).size !== (projectData.collectionList || []).length)) {
-           const currentList = projectData.collectionList || [];
-           const newList = Array.from(new Set([...currentList, collectionName]));
-           
-           // Update project metadata
-           await projectDoc.ref.update({
-             collectionList: newList,
-             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-           });
-
-           // Explicitly create the collection document so it's not a "phantom" in Firestore console
-           await firestore.doc(`projects/${projectId}/collections/${collectionName}`).set({
-             name: collectionName,
-             updatedAt: admin.firestore.FieldValue.serverTimestamp()
-           }, { merge: true });
-
-           // Clear project cache to reflect new collection list
-           projectCache.delete(apiKeyStr);
-        }
-
-        return res.status(200).json({ success: true, id: docRef.id });
+        return res.status(200).json({ success: true, id: docId });
       }
 
       // --- GET: Read ---
@@ -663,16 +1091,21 @@ async function startServer() {
         stats.reads++;
         statsBuffer.set(projectId, stats);
 
-        const snapshot = await firestore.collection(docPath)
-          .orderBy('_created', 'desc')
-          .limit(limit)
-          .get();
+        let data;
+        if (PostgresService.isActive()) {
+          data = await PostgresService.getDocuments(projectId, collectionName, limit);
+        } else {
+          const snapshot = await firestore!.collection(docPath)
+            .orderBy('_created', 'desc')
+            .limit(limit)
+            .get();
 
-        const data = snapshot.docs.map(doc => ({
-          ...doc.data(),
-          id: doc.id,
-          _created: doc.data()._created?.toDate?.()?.toISOString()
-        }));
+          data = snapshot.docs.map(doc => ({
+            ...doc.data(),
+            id: doc.id,
+            _created: doc.data()._created?.toDate?.()?.toISOString()
+          }));
+        }
 
         // Store in cache
         if (!isMasterRequest) {
@@ -690,29 +1123,41 @@ async function startServer() {
         const payload = req.body;
         const writeRule = projectRules[collectionName]?.['.write'];
         
-        // Fetch current data for rule evaluation
-        const docRef = firestore.collection(docPath).doc(docId);
-        console.log(`[API] PUT Request: Path=${docPath}, ID=${docId}`);
-        const docSnap = await docRef.get();
-        if (!docSnap.exists) {
-          console.warn(`[API] PUT Document not found: ${docPath}/${docId}`);
+        let existingData = null;
+        if (PostgresService.isActive()) {
+          existingData = await PostgresService.getDocument(projectId, collectionName, docId);
+        } else {
+          const docRef = firestore!.collection(docPath).doc(docId);
+          const docSnap = await docRef.get();
+          if (docSnap.exists) {
+            existingData = docSnap.data();
+          }
+        }
+
+        if (!existingData) {
+          console.warn(`[API] PUT Document not found: ${collectionName}/${docId}`);
           return res.status(404).json({ error: 'Document not found' });
         }
 
         const isAllowed = isMasterRequest || evaluateRule(writeRule, { 
           auth: authContext, 
           newData: payload, 
-          data: docSnap.data() 
+          data: existingData 
         });
 
         if (!isAllowed && writeRule !== undefined && !isMasterRequest) {
           return res.status(403).json({ error: 'Permission Denied' });
         }
 
-        await docRef.update({
-          ...payload,
-          _updated: admin.firestore.FieldValue.serverTimestamp()
-        });
+        if (PostgresService.isActive()) {
+          await PostgresService.updateDocument(projectId, collectionName, docId, payload);
+        } else {
+          const docRef = firestore!.collection(docPath).doc(docId);
+          await docRef.update({
+            ...payload,
+            _updated: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
 
         // Invalidate cache
         invalidateCache(projectId, collectionName);
@@ -731,43 +1176,66 @@ async function startServer() {
         if (!docId) return res.status(400).json({ error: 'Missing Document ID' });
 
         const writeRule = projectRules[collectionName]?.['.write'];
-        const docRef = firestore.collection(docPath).doc(docId);
-        console.log(`[API] DELETE Request: FullPath=${docRef.path}, ID=${docId}`);
-        const docSnap = await docRef.get();
-        if (!docSnap.exists) {
-          console.warn(`[API] DELETE Document not found at path: ${docRef.path}`);
+        let existingData = null;
+
+        if (PostgresService.isActive()) {
+          existingData = await PostgresService.getDocument(projectId, collectionName, docId);
+        } else {
+          const docRef = firestore!.collection(docPath).doc(docId);
+          const docSnap = await docRef.get();
+          if (docSnap.exists) {
+            existingData = docSnap.data();
+          }
+        }
+
+        if (!existingData) {
+          console.warn(`[API] DELETE Document not found: ${collectionName}/${docId}`);
           return res.status(404).json({ error: 'Document not found' });
         }
 
         const isAllowed = isMasterRequest || evaluateRule(writeRule, { 
           auth: authContext, 
           newData: null, 
-          data: docSnap.data() 
+          data: existingData 
         });
 
         if (!isAllowed && writeRule !== undefined && !isMasterRequest) {
           return res.status(403).json({ error: 'Permission Denied' });
         }
 
-        await docRef.delete();
+        if (PostgresService.isActive()) {
+          await PostgresService.deleteDocument(projectId, collectionName, docId);
+          
+          // Check if collection is empty
+          const count = await PostgresService.getCollectionCount(projectId, collectionName);
+          if (count === 0) {
+            const list = projectData.collectionList || [];
+            const newList = list.filter((name: string) => name !== collectionName);
+            await PostgresService.updateProject(projectId, { collectionList: newList });
+            projectCache.delete(apiKeyStr);
+          }
+        } else {
+          const docRef = firestore!.collection(docPath).doc(docId);
+          await docRef.delete();
+
+          // Check if collection is now empty
+          const remainingSnap = await firestore!.collection(docPath).limit(1).get();
+          if (remainingSnap.empty) {
+            await firestore!.collection('projects').doc(projectId).update({
+              collectionList: admin.firestore.FieldValue.arrayRemove(collectionName),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            
+            // Also delete the collection document
+            await firestore!.doc(`projects/${projectId}/collections/${collectionName}`).delete();
+            
+            // Clear project cache to reflect removed collection
+            projectCache.delete(apiKeyStr);
+          }
+        }
 
         // Invalidate cache
         invalidateCache(projectId, collectionName);
-
-        // Check if collection is now empty
-        const remainingSnap = await firestore.collection(docPath).limit(1).get();
-        if (remainingSnap.empty) {
-          await projectDoc.ref.update({
-            collectionList: admin.firestore.FieldValue.arrayRemove(collectionName),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-          
-          // Also delete the collection document
-          await firestore.doc(`projects/${projectId}/collections/${collectionName}`).delete();
-          
-          // Clear project cache to reflect removed collection
-          projectCache.delete(apiKeyStr);
-        }
 
         // Update stats (Buffered)
         const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };

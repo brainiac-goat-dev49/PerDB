@@ -20,6 +20,19 @@ import {
 import { auth, db } from '../lib/firebase';
 import { Project, DBEntry, Collection } from '../types';
 
+let cachedUsePostgres: boolean | null = null;
+async function shouldUsePostgres(): Promise<boolean> {
+  if (cachedUsePostgres !== null) return cachedUsePostgres;
+  try {
+    const res = await fetch('/api/config');
+    const data = await res.json();
+    cachedUsePostgres = !!data.usePostgres;
+  } catch (e) {
+    cachedUsePostgres = false;
+  }
+  return cachedUsePostgres;
+}
+
 // Helper to convert Firestore snapshots to our App types
 const mapDocToProject = (docSnap: any): Project => {
   const data = docSnap.data();
@@ -53,6 +66,17 @@ export const FirebaseService = {
   // --- Management API ---
 
   getProjectCollections: async (projectId: string): Promise<Collection[]> => {
+    if (await shouldUsePostgres()) {
+      const user = auth.currentUser;
+      if (!user) return [];
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/projects/${projectId}/collections`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch collections');
+      return await res.json();
+    }
+
     const docRef = doc(db, 'projects', projectId);
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) return [];
@@ -72,6 +96,17 @@ export const FirebaseService = {
   },
 
   getCollectionPreview: async (projectId: string, collectionName: string): Promise<Partial<Collection>> => {
+    if (await shouldUsePostgres()) {
+      const user = auth.currentUser;
+      if (!user) return {};
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/projects/${projectId}/collections/${collectionName}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch collection preview');
+      return await res.json();
+    }
+
     const colRef = collection(db, `projects/${projectId}/collections/${collectionName}/docs`);
     const q = query(colRef, orderBy('_created', 'desc'), limit(10));
     const [snapshot, countSnapshot] = await Promise.all([
@@ -92,6 +127,21 @@ export const FirebaseService = {
     limitCount: number = 50,
     lastVisible: QueryDocumentSnapshot | null = null
   ): Promise<{ entries: DBEntry[], lastDoc: QueryDocumentSnapshot | null }> => {
+    if (await shouldUsePostgres()) {
+      const user = auth.currentUser;
+      if (!user) return { entries: [], lastDoc: null };
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/projects/${projectId}/collections/${collectionName}/full?limit=${limitCount}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch full collection');
+      const data = await res.json();
+      return {
+        entries: data.entries,
+        lastDoc: null
+      };
+    }
+
     const colRef = collection(db, `projects/${projectId}/collections/${collectionName}/docs`);
     
     let q;
@@ -111,6 +161,25 @@ export const FirebaseService = {
   },
 
   createProject: async (name: string): Promise<Project> => {
+    if (await shouldUsePostgres()) {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Must be logged in");
+      const token = await user.getIdToken();
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to create project');
+      }
+      return await res.json();
+    }
+
     const user = auth.currentUser;
     if (!user) throw new Error("Must be logged in");
 
@@ -158,6 +227,17 @@ export const FirebaseService = {
   },
 
   getAllProjects: async (): Promise<Project[]> => {
+    if (await shouldUsePostgres()) {
+      const user = auth.currentUser;
+      if (!user) return [];
+      const token = await user.getIdToken();
+      const res = await fetch('/api/projects', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch projects');
+      return await res.json();
+    }
+
     const user = auth.currentUser;
     if (!user) return [];
 
@@ -169,10 +249,45 @@ export const FirebaseService = {
   },
 
   deleteProject: async (projectId: string): Promise<void> => {
+    if (await shouldUsePostgres()) {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Must be logged in");
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to delete project');
+      }
+      return;
+    }
+
     await deleteDoc(doc(db, 'projects', projectId));
   },
 
   updateProject: async (projectId: string, data: Partial<Project>): Promise<void> => {
+    if (await shouldUsePostgres()) {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Must be logged in");
+      const token = await user.getIdToken();
+      const { id, collections, ...cleanData } = data as any;
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(cleanData)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update project');
+      }
+      return;
+    }
+
     // We strip out the ID and complex types that shouldn't be saved directly if passed by accident
     const { id, collections, ...cleanData } = data as any;
     
@@ -221,6 +336,27 @@ export const FirebaseService = {
   // --- User Management ---
 
   syncUser: async (): Promise<void> => {
+    if (await shouldUsePostgres()) {
+      const user = auth.currentUser;
+      if (!user) return;
+      const token = await user.getIdToken();
+      const res = await fetch('/api/user/sync', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        if (res.status === 403) {
+          await auth.signOut();
+        }
+        throw new Error(err.error || 'Failed to sync user');
+      }
+      return;
+    }
+
     const user = auth.currentUser;
     if (!user) return;
 
@@ -257,6 +393,7 @@ export const FirebaseService = {
       });
     }
   },
+
 
   getAllUsers: async (): Promise<any[]> => {
     const user = auth.currentUser;
