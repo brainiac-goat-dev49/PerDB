@@ -868,53 +868,65 @@ async function startServer() {
       // --- Domain Restriction (Enforced per project) ---
       const origin = req.headers.origin as string || '';
       const referer = (req.headers.referer || req.headers.referrer) as string || '';
-      const isLocalhost = (origin + referer).includes('localhost') || (origin + referer).includes('127.0.0.1');
+      const host = req.headers.host as string || '';
       
+      const isLocalhost = (origin + referer).includes('localhost') || (origin + referer).includes('127.0.0.1');
+      const isSelfDashboardRequest = (origin + referer).includes(host) || 
+                                     (origin + referer).includes('perdb.up.railway.app') || 
+                                     (origin + referer).includes('perdb.co') ||
+                                     (origin + referer).includes('googleusercontent.com') ||
+                                     (origin + referer).includes('europe-west3.run.app');
+
+      // Helper to extract all potential Perchance slugs or subdomains
+      const getPerchanceIdentifiers = (url: string): string[] => {
+        if (!url) return [];
+        const identifiers: string[] = [];
+        try {
+          let clean = url.toLowerCase().trim();
+          
+          // Remove protocol
+          clean = clean.replace(/^https?:\/\//, '');
+          
+          // Split into host and path
+          const slashIdx = clean.indexOf('/');
+          const hostPart = slashIdx === -1 ? clean : clean.substring(0, slashIdx);
+          const pathPart = slashIdx === -1 ? '' : clean.substring(slashIdx + 1);
+          
+          if (hostPart.includes('perchance.org')) {
+            // 1. Extract subdomain
+            if (hostPart.endsWith('.null.perchance.org')) {
+              const sub = hostPart.replace('.null.perchance.org', '');
+              if (sub && sub !== 'null') {
+                identifiers.push(sub);
+              }
+            } else if (hostPart.endsWith('.perchance.org')) {
+              const sub = hostPart.replace('.perchance.org', '');
+              if (sub && sub !== 'www') {
+                identifiers.push(sub);
+              }
+            }
+            
+            // 2. Extract path segments
+            if (pathPart) {
+              const firstSegment = pathPart.split(/[/?#]/)[0];
+              if (firstSegment && firstSegment !== 'api') {
+                identifiers.push(firstSegment);
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore error
+        }
+        return identifiers.map(id => id.trim().toLowerCase()).filter(Boolean);
+      };
+
       // If in production, check allowed origins (Master Key bypasses this)
-      if (process.env.NODE_ENV === 'production' && !isLocalhost && !isMasterRequest) {
+      if (process.env.NODE_ENV === 'production' && !isLocalhost && !isSelfDashboardRequest && !isMasterRequest) {
         const allowedOrigins = projectData.permissions?.allowedOrigins || [];
         
-        // Helper to extract perchance slug
-        const getPerchanceSlug = (url: string) => {
-          if (!url) return null;
-          try {
-            // Remove protocol and trailing slashes
-            let clean = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-            if (!clean.includes('perchance.org')) return null;
-            
-            // Format: [subdomain].perchance.org/[slug]... or perchance.org/[slug]
-            const parts = clean.split('/');
-            
-            // 1. If it's the main domain perchance.org/slug
-            if (parts[0] === 'perchance.org') {
-              return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
-            }
-            
-            // 2. If it's a subdomain [something].perchance.org
-            if (parts[0].endsWith('.perchance.org')) {
-              const sub = parts[0].replace('.perchance.org', '');
-              
-              // Perchance uses 32-char hex subdomains for random URLs
-              // If it's NOT a 32-char hex, the subdomain is likely the slug
-              const isRandomSubdomain = sub.length === 32 && /^[a-f0-9]+$/.test(sub);
-              
-              if (isRandomSubdomain) {
-                // Look in the path for the real slug
-                return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
-              }
-              
-              // Otherwise, the subdomain is the slug
-              return sub.toLowerCase();
-            }
-
-            return parts.length >= 2 ? parts[1].split(/[?#]/)[0].toLowerCase() : null;
-          } catch (e) {
-            return null;
-          }
-        };
-
-        const refererSlug = getPerchanceSlug(referer) || getPerchanceSlug(origin);
-        const originSlug = getPerchanceSlug(origin); // Specifically for origin
+        const refererIdentifiers = getPerchanceIdentifiers(referer);
+        const originIdentifiers = getPerchanceIdentifiers(origin);
+        const requestIdentifiers = Array.from(new Set([...refererIdentifiers, ...originIdentifiers]));
         
         const isAllowed = allowedOrigins.length === 0 
           ? (origin + referer).includes('perchance.org') 
@@ -926,15 +938,17 @@ async function startServer() {
               if (origin.toLowerCase().includes(lowered) || referer.toLowerCase().includes(lowered)) return true;
               
               // 2. Smart Perchance Matching
-              const allowedSlug = lowered.includes('perchance.org') 
-                ? getPerchanceSlug(lowered) 
-                : lowered; // If user just entered "my-generator"
-              
-              if (allowedSlug) {
-                // Match against referer slug, origin slug, or direct URL inclusion
-                if (refererSlug === allowedSlug || originSlug === allowedSlug) return true;
-                if (referer.includes(`/${allowedSlug}/`) || referer.endsWith(`/${allowedSlug}`)) return true;
-              }
+              const allowedIdentifiers = [
+                lowered,
+                ...getPerchanceIdentifiers(lowered)
+              ];
+
+              // Check for intersection
+              const hasIntersection = requestIdentifiers.some(reqId => 
+                allowedIdentifiers.includes(reqId)
+              );
+
+              if (hasIntersection) return true;
               
               // 3. Fallback: If they just added "perchance.org", allow all perchance
               if (lowered === 'perchance.org' && (origin + referer).includes('perchance.org')) return true;
@@ -946,7 +960,7 @@ async function startServer() {
           console.warn(`Domain Restricted: Origin=${origin}, Referer=${referer} not in ${allowedOrigins.join(', ')}`);
           return res.status(403).json({ 
             error: `Forbidden: This API Key is locked to specific domains. Current origin: ${origin || referer || 'Unknown'}. Ensure your generator name is added to the allowed list.`,
-            hint: `If using Perchance, try adding '${refererSlug || 'your-generator-name'}' or just 'perchance.org' to the allowed domains.`
+            hint: `If using Perchance, try adding '${requestIdentifiers[0] || 'your-generator-name'}' or just 'perchance.org' to the allowed domains.`
           });
         }
       }
