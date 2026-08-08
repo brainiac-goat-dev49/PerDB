@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Send, MessageSquare, Mail, User, CheckCircle } from 'lucide-react';
 import { Card, Button, Input } from '../components/ui';
 import { FirebaseService } from '../services/firebaseService';
-import { auth } from '../lib/firebase';
+import { AuthService } from '../services/authService';
 
 export const Contact: React.FC = () => {
   const [name, setName] = useState('');
@@ -14,7 +14,7 @@ export const Contact: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const user = auth.currentUser;
+    const user = AuthService.getUser();
     if (user) {
       if (user.displayName) setName(user.displayName);
       if (user.email) setEmail(user.email);

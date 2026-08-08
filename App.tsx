@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Database, Home as HomeIcon, LayoutDashboard, Book, Code, Menu, X, LogOut, User, Info, MessageSquare, Shield } from 'lucide-react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from './lib/firebase';
+import { AuthService, User as AuthUser } from './services/authService';
 import { Home } from './pages/Home';
 import { Dashboard } from './pages/Dashboard';
 import { Docs } from './pages/Docs';
@@ -13,8 +12,6 @@ import { Contact } from './pages/Contact';
 import { Admin } from './pages/Admin';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { FirebaseService } from './services/firebaseService';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from './lib/firebase';
 
 const AppContent: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -23,48 +20,23 @@ const AppContent: React.FC = () => {
   const location = useLocation();
 
   useEffect(() => {
-    let userUnsubscribe: (() => void) | null = null;
-    
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = AuthService.onAuthStateChanged(async (currentUser) => {
       if (currentUser) {
-        // Sync user to Firestore
         try {
-          await FirebaseService.syncUser();
+          await AuthService.syncUser();
         } catch (e: any) {
           console.error("Failed to sync user:", e);
-          if (e.message?.includes('Connection failed') || e.message?.includes('offline')) {
-            // This is a known issue in some environments, don't crash the app
-            console.warn("Firestore connection not available yet, will retry later.");
-          }
         }
-        
-        // Listen for user document changes (to handle real-time banning)
-        try {
-          userUnsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
-            if (docSnap.exists() && docSnap.data().isBanned) {
-              signOut(auth);
-              alert("Your account has been suspended. Please contact support if you believe this is an error.");
-              navigate('/');
-            }
-          }, (error) => {
-            console.warn("User snapshot listener failed (likely connection issue):", error);
-          });
-        } catch (e) {
-          console.error("Failed to setup user snapshot listener:", e);
-        }
-      } else {
-        if (userUnsubscribe) userUnsubscribe();
       }
       setUser(currentUser);
     });
     return () => {
       unsubscribe();
-      if (userUnsubscribe) userUnsubscribe();
     };
   }, [navigate]);
 
   const handleSignOut = async () => {
-    await signOut(auth);
+    await AuthService.signOut();
     navigate('/');
   };
 

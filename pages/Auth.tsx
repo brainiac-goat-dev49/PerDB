@@ -1,16 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  updateProfile 
-} from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
 import { Button, Input, Card } from '../components/ui';
 import { Database, LogIn, UserPlus, AlertCircle } from 'lucide-react';
-
-import { FirebaseService } from '../services/firebaseService';
+import { AuthService } from '../services/authService';
 
 export const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -28,41 +20,14 @@ export const Auth: React.FC = () => {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        await AuthService.login(email, password);
       } else {
-        // Check if email is banned before creating
-        const bannedRef = doc(db, 'banned_emails', email);
-        const bannedSnap = await getDoc(bannedRef);
-        if (bannedSnap.exists()) {
-          throw new Error("This email is permanently banned from PerDB.");
-        }
-
-        // Create Authentication User
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(cred.user, { displayName: name });
-        
-        // Create Firestore User Document
-        await setDoc(doc(db, 'users', cred.user.uid), {
-          uid: cred.user.uid,
-          email: email,
-          displayName: name,
-          role: 'user',
-          isBanned: false,
-          createdAt: serverTimestamp(),
-          lastLogin: serverTimestamp()
-        });
+        await AuthService.register(email, password, name);
       }
-      
-      // Sync user (this also checks for ban on login)
-      await FirebaseService.syncUser();
       navigate('/dashboard');
     } catch (err: any) {
       console.error(err);
-      let msg = err.message || "Authentication failed.";
-      if (err.code === 'auth/invalid-credential') msg = "Invalid email or password.";
-      if (err.code === 'auth/email-already-in-use') msg = "Email already in use.";
-      if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
-      setError(msg);
+      setError(err.message || "Authentication failed.");
     } finally {
       setLoading(false);
     }

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Card, Button, Input, Badge } from '../components/ui';
 import { FirebaseService } from '../services/firebaseService';
-import { auth } from '../lib/firebase';
+import { AuthService } from '../services/authService';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const Admin: React.FC = () => {
@@ -27,7 +27,7 @@ export const Admin: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    const unsubscribe = AuthService.onAuthStateChanged((user) => {
       if (user && user.email === 'testimonyfresh49@gmail.com') {
         setIsAdmin(true);
         loadData();

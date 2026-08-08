@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Database, Key, Trash2, RefreshCw, Layers, Table as TableIcon, FileJson, Search, Pencil, Save, X, ChevronLeft, ChevronRight, Shield, Play, CheckCircle, XCircle } from 'lucide-react';
-import { QueryDocumentSnapshot } from 'firebase/firestore';
 import { FirebaseService } from '../services/firebaseService';
 import { Project, Collection, DBEntry } from '../types';
 import { Button, Card, Input, Badge, Modal, ConfirmationModal, AlertModal } from '../components/ui';
@@ -204,7 +203,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageHistory, setPageHistory] = useState<(QueryDocumentSnapshot | null)[]>([null]);
+  const [pageHistory, setPageHistory] = useState<(any | null)[]>([null]);
   const [hasNextPage, setHasNextPage] = useState(true);
 
   const fetchFullEntries = async (page: number = 1, requestedItemsPerPage: number = itemsPerPage) => {
