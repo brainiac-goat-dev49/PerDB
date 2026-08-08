@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Send, MessageSquare, Mail, User, CheckCircle } from 'lucide-react';
 import { Card, Button, Input } from '../components/ui';
-import { FirebaseService } from '../services/firebaseService';
+import { PerDbService } from '../services/perDbService';
 import { AuthService } from '../services/authService';
 
 export const Contact: React.FC = () => {
@@ -29,7 +29,7 @@ export const Contact: React.FC = () => {
     setError(null);
 
     try {
-      await FirebaseService.saveFeedback({
+      await PerDbService.saveFeedback({
         name,
         email,
         message,

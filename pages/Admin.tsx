@@ -14,7 +14,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Card, Button, Input, Badge } from '../components/ui';
-import { FirebaseService } from '../services/firebaseService';
+import { PerDbService } from '../services/perDbService';
 import { AuthService } from '../services/authService';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -44,8 +44,8 @@ export const Admin: React.FC = () => {
     setLoading(true);
     try {
       const [usersData, feedbackData] = await Promise.all([
-        FirebaseService.getAllUsers(),
-        FirebaseService.getAllFeedback()
+        PerDbService.getAllUsers(),
+        PerDbService.getAllFeedback()
       ]);
       setUsers(usersData);
       setFeedback(feedbackData);
@@ -58,7 +58,7 @@ export const Admin: React.FC = () => {
 
   const handleToggleBan = async (userId: string, currentStatus: boolean) => {
     try {
-      await FirebaseService.updateUserStatus(userId, !currentStatus);
+      await PerDbService.updateUserStatus(userId, !currentStatus);
       setUsers(users.map(u => u.id === userId ? { ...u, isBanned: !currentStatus } : u));
     } catch (err) {
       alert("Failed to update user status");
@@ -70,7 +70,7 @@ export const Admin: React.FC = () => {
     
     try {
       setLoading(true);
-      await FirebaseService.deleteUserFull(userId);
+      await PerDbService.deleteUserFull(userId);
       setUsers(users.filter(u => u.id !== userId));
       alert("User and all associated data deleted successfully.");
     } catch (err: any) {
@@ -82,7 +82,7 @@ export const Admin: React.FC = () => {
 
   const handleSendResetLink = async (email: string) => {
     try {
-      const link = await FirebaseService.sendResetLink(email);
+      const link = await PerDbService.sendResetLink(email);
       // In a real app, you'd email this. Here we'll show it in a prompt so the admin can copy it.
       window.prompt("Password reset link generated. Copy and send this to the user:", link);
     } catch (err: any) {
@@ -93,7 +93,7 @@ export const Admin: React.FC = () => {
   const handleDeleteFeedback = async (id: string) => {
     if (!confirm("Are you sure you want to delete this feedback?")) return;
     try {
-      await FirebaseService.deleteFeedback(id);
+      await PerDbService.deleteFeedback(id);
       setFeedback(feedback.filter(f => f.id !== id));
     } catch (err) {
       alert("Failed to delete feedback");

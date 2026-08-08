@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, RotateCcw, Database, Cpu } from 'lucide-react';
 import { Button } from '../components/ui';
-import { FirebaseService } from '../services/firebaseService';
+import { PerDbService } from '../services/perDbService';
 import { LogEntry } from '../types';
 import { generateCodeSnippet } from '../services/aiService';
 
@@ -71,15 +71,15 @@ export const Playground: React.FC = () => {
     try {
       const executionContext = async () => {
         const db = {
-          save: (key: string, col: string, data: any) => FirebaseService.runtimeAdd(key, col, data),
-          fetch: (key: string, col: string) => FirebaseService.runtimeGet(key, col),
-          update: (key: string, col: string, id: string, data: any, secretKey?: string) => FirebaseService.runtimeUpdate(key, col, id, data, secretKey),
-          delete: (key: string, col: string, id: string, secretKey?: string) => FirebaseService.runtimeDelete(key, col, id, secretKey)
+          save: (key: string, col: string, data: any) => PerDbService.runtimeAdd(key, col, data),
+          fetch: (key: string, col: string) => PerDbService.runtimeGet(key, col),
+          update: (key: string, col: string, id: string, data: any, secretKey?: string) => PerDbService.runtimeUpdate(key, col, id, data, secretKey),
+          delete: (key: string, col: string, id: string, secretKey?: string) => PerDbService.runtimeDelete(key, col, id, secretKey)
         };
         const log = (msg: string, type: any) => addLog(msg, type);
 
         // Basic safety wrapper
-        const userFunction = new Function('db', 'log', 'FirebaseService', `
+        const userFunction = new Function('db', 'log', 'PerDbService', `
           return (async () => {
             try {
               ${code}
@@ -90,7 +90,7 @@ export const Playground: React.FC = () => {
           })();
         `);
 
-        await userFunction(db, log, FirebaseService);
+        await userFunction(db, log, PerDbService);
       };
 
       await executionContext();

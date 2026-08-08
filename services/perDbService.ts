@@ -1,7 +1,16 @@
 import { AuthService } from './authService';
 import { Project, DBEntry, Collection } from '../types';
 
-export const FirebaseService = {
+async function safeJson(res: Response): Promise<any> {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await res.text();
+    throw new Error(`Server response error (${res.status}): ${text.slice(0, 80)}`);
+  }
+  return await res.json();
+}
+
+export const PerDbService = {
   // --- Management API ---
 
   getProjectCollections: async (projectId: string): Promise<Collection[]> => {
@@ -11,7 +20,7 @@ export const FirebaseService = {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) throw new Error('Failed to fetch collections');
-    return await res.json();
+    return await safeJson(res);
   },
 
   getCollectionPreview: async (projectId: string, collectionName: string): Promise<Partial<Collection>> => {
@@ -21,7 +30,7 @@ export const FirebaseService = {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) throw new Error('Failed to fetch collection preview');
-    return await res.json();
+    return await safeJson(res);
   },
 
   getFullCollection: async (
@@ -36,7 +45,7 @@ export const FirebaseService = {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) throw new Error('Failed to fetch full collection');
-    const data = await res.json();
+    const data = await safeJson(res);
     return {
       entries: data.entries || [],
       lastDoc: null
@@ -55,10 +64,10 @@ export const FirebaseService = {
       body: JSON.stringify({ name })
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await safeJson(res).catch(() => ({ error: 'Failed to create project' }));
       throw new Error(err.error || 'Failed to create project');
     }
-    return await res.json();
+    return await safeJson(res);
   },
 
   getAllProjects: async (): Promise<Project[]> => {
@@ -68,7 +77,7 @@ export const FirebaseService = {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) throw new Error('Failed to fetch projects');
-    return await res.json();
+    return await safeJson(res);
   },
 
   deleteProject: async (projectId: string): Promise<void> => {
@@ -264,7 +273,7 @@ export const FirebaseService = {
       },
       body: JSON.stringify(data)
     });
-    const result = await res.json();
+    const result = await safeJson(res);
     if (result.error) throw new Error(result.error);
     return result;
   },
@@ -277,7 +286,7 @@ export const FirebaseService = {
         'x-api-key': apiKey
       }
     });
-    const result = await res.json();
+    const result = await safeJson(res);
     if (result.error) throw new Error(result.error);
     return result;
   },
@@ -293,7 +302,7 @@ export const FirebaseService = {
       },
       body: JSON.stringify(data)
     });
-    const result = await res.json();
+    const result = await safeJson(res);
     if (result.error) throw new Error(result.error);
   },
 
@@ -306,7 +315,7 @@ export const FirebaseService = {
         ...(secretKey ? { 'x-secret-key': secretKey } : {})
       }
     });
-    const result = await res.json();
+    const result = await safeJson(res);
     if (result.error) throw new Error(result.error);
   }
 };

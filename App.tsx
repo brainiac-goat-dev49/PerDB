@@ -11,7 +11,6 @@ import { About } from './pages/About';
 import { Contact } from './pages/Contact';
 import { Admin } from './pages/Admin';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { FirebaseService } from './services/firebaseService';
 
 const AppContent: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

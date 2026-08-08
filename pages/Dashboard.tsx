@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Database, Key, Trash2, RefreshCw, Layers, Table as TableIcon, FileJson, Search, Pencil, Save, X, ChevronLeft, ChevronRight, Shield, Play, CheckCircle, XCircle } from 'lucide-react';
-import { FirebaseService } from '../services/firebaseService';
+import { PerDbService } from '../services/perDbService';
 import { Project, Collection, DBEntry } from '../types';
 import { Button, Card, Input, Badge, Modal, ConfirmationModal, AlertModal } from '../components/ui';
 
@@ -211,7 +211,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
     try {
       // Find the cursor for this page
       const cursor = pageHistory[page - 1] || null;
-      const { entries, lastDoc } = await FirebaseService.getFullCollection(projectId, collection.name, requestedItemsPerPage, cursor);
+      const { entries, lastDoc } = await PerDbService.getFullCollection(projectId, collection.name, requestedItemsPerPage, cursor);
       
       setFullEntries(entries);
       setHasNextPage(entries.length === requestedItemsPerPage);
@@ -287,7 +287,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
     try {
       const parsedData = JSON.parse(editJson);
       const { id, ...dataToUpdate } = parsedData; 
-      await FirebaseService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate, projectSecretKey);
+      await PerDbService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate, projectSecretKey);
       setEditingEntry(null);
       onRefresh();
       fetchFullEntries();
@@ -303,7 +303,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
     if (!deletingEntry) return;
     setIsProcessing(true);
     try {
-      await FirebaseService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id, projectSecretKey);
+      await PerDbService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id, projectSecretKey);
       setDeletingEntry(null);
       onRefresh();
       fetchFullEntries();
@@ -321,7 +321,7 @@ const FullCollectionModal: React.FC<FullCollectionModalProps> = ({
     try {
       const ids: string[] = Array.from(selectedIds);
       await Promise.all(ids.map((id: string) => 
-        FirebaseService.runtimeDelete(projectApiKey, collection.name, id, projectSecretKey)
+        PerDbService.runtimeDelete(projectApiKey, collection.name, id, projectSecretKey)
       ));
       setSelectedIds(new Set());
       onRefresh();
@@ -523,7 +523,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
     try {
       const ids: string[] = Array.from(selectedIds);
       await Promise.all(ids.map((id: string) => 
-        FirebaseService.runtimeDelete(projectApiKey, collection.name, id, projectSecretKey as string | undefined)
+        PerDbService.runtimeDelete(projectApiKey, collection.name, id, projectSecretKey as string | undefined)
       ));
       setSelectedIds(new Set());
       onRefresh();
@@ -545,7 +545,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
     try {
       const parsedData = JSON.parse(editJson);
       const { id, ...dataToUpdate } = parsedData; 
-      await FirebaseService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate, projectSecretKey);
+      await PerDbService.runtimeUpdate(projectApiKey, collection.name, editingEntry.id, dataToUpdate, projectSecretKey);
       setEditingEntry(null);
       onRefresh();
     } catch (e: any) {
@@ -563,7 +563,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
     if (!deletingEntry) return;
     setIsProcessing(true);
     try {
-      await FirebaseService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id, projectSecretKey);
+      await PerDbService.runtimeDelete(projectApiKey, collection.name, deletingEntry.id, projectSecretKey);
       setDeletingEntry(null);
       onRefresh();
     } catch (e: any) {
@@ -909,13 +909,13 @@ export const Dashboard: React.FC = () => {
   const fetchProjects = async () => {
     setLoading(true);
     try {
-      const data = await FirebaseService.getAllProjects();
+      const data = await PerDbService.getAllProjects();
       setProjects(data);
       if (selectedProject) {
         const updated = data.find(p => p.id === selectedProject.id);
         if (updated) {
           // Fetch skeleton list
-          const skeletons = await FirebaseService.getProjectCollections(updated.id);
+          const skeletons = await PerDbService.getProjectCollections(updated.id);
           
           // Preserve already loaded data for existing collections to save quota
           const mergedCollections = skeletons.map(skel => {
@@ -942,7 +942,7 @@ export const Dashboard: React.FC = () => {
     setActiveTab('data');
     setLoading(true);
     try {
-      const collections = await FirebaseService.getProjectCollections(project.id);
+      const collections = await PerDbService.getProjectCollections(project.id);
       setSelectedProject({ ...project, collections });
     } catch (err) {
       console.error(err);
@@ -960,7 +960,7 @@ export const Dashboard: React.FC = () => {
     if (!newProjectName.trim()) return;
     setLoading(true);
     try {
-      await FirebaseService.createProject(newProjectName);
+      await PerDbService.createProject(newProjectName);
       setNewProjectName('');
       setIsCreating(false);
       await fetchProjects();
@@ -976,7 +976,7 @@ export const Dashboard: React.FC = () => {
     if (!deleteConfirmation) return;
     setLoading(true);
     try {
-      await FirebaseService.deleteProject(deleteConfirmation);
+      await PerDbService.deleteProject(deleteConfirmation);
       setDeleteConfirmation(null);
       await fetchProjects();
     } catch (e) {
@@ -1006,7 +1006,7 @@ export const Dashboard: React.FC = () => {
     });
 
     try {
-      const data = await FirebaseService.getCollectionPreview(selectedProject.id, collectionName);
+      const data = await PerDbService.getCollectionPreview(selectedProject.id, collectionName);
       
       setSelectedProject(prev => {
         if (!prev) return null;
@@ -1080,7 +1080,7 @@ export const Dashboard: React.FC = () => {
   const handleUpdateProject = async (data: Partial<Project>) => {
     if (!selectedProject) return;
     try {
-      await FirebaseService.updateProject(selectedProject.id, data);
+      await PerDbService.updateProject(selectedProject.id, data);
       await fetchProjects();
     } catch (err) {
       console.error(err);

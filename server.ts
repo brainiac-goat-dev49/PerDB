@@ -80,7 +80,7 @@ async function startServer() {
 
   // Config
   app.get("/api/config", (req, res) => {
-    res.json({ usePostgres: false, useToothDb: true, firebase: false });
+    res.json({ usePostgres: false, useToothDb: true });
   });
 
   // Native Auth: Register
@@ -435,6 +435,33 @@ async function startServer() {
     }
   });
 
+  app.post("/api/feedback", async (req, res) => {
+    try {
+      const { name, email, message } = req.body;
+      if (!message) return res.status(400).json({ error: 'Message is required' });
+      await ToothDbService.addFeedback({ name, email, message });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to save feedback' });
+    }
+  });
+
+  app.post("/api/admin/send-reset-link", async (req, res) => {
+    try {
+      const decoded = await getAuthenticatedUser(req);
+      if (decoded.email !== 'testimonyfresh49@gmail.com') {
+        return res.status(403).json({ error: 'Forbidden: Admin access only' });
+      }
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Missing email' });
+      const resetToken = Buffer.from(JSON.stringify({ email, exp: Date.now() + 3600000 })).toString('base64');
+      const link = `${req.protocol}://${req.get('host')}/auth?resetToken=${resetToken}`;
+      res.json({ link });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to generate reset link' });
+    }
+  });
+
   app.delete("/api/admin/feedback/:id", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
@@ -559,6 +586,28 @@ async function startServer() {
         statsBuffer.set(projectId, stats);
 
         return res.status(200).json(docs);
+      }
+
+      // --- PUT: Update ---
+      if (req.method === 'PUT') {
+        const docId = req.query.id as string;
+        if (!docId) return res.status(400).json({ error: 'Missing document id parameter' });
+        await ToothDbService.addDocument(projectId, collectionName, docId, req.body);
+        const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
+        stats.writes++;
+        statsBuffer.set(projectId, stats);
+        return res.status(200).json({ success: true, id: docId });
+      }
+
+      // --- DELETE: Delete ---
+      if (req.method === 'DELETE') {
+        const docId = req.query.id as string;
+        if (!docId) return res.status(400).json({ error: 'Missing document id parameter' });
+        // Delete document from project
+        const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
+        stats.writes++;
+        statsBuffer.set(projectId, stats);
+        return res.status(200).json({ success: true, id: docId });
       }
 
       return res.status(405).json({ error: 'Method Not Allowed' });

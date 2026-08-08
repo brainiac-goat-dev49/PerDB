@@ -12,6 +12,15 @@ const USER_KEY = 'perdb_auth_user';
 type AuthStateCallback = (user: User | null) => void;
 const listeners: Set<AuthStateCallback> = new Set();
 
+async function parseJsonResponse(res: Response) {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await res.text();
+    throw new Error(`Server returned non-JSON response (${res.status}): ${text.slice(0, 80)}`);
+  }
+  return await res.json();
+}
+
 export const AuthService = {
   getUser: (): User | null => {
     try {
@@ -44,7 +53,7 @@ export const AuthService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, displayName })
     });
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
     if (!res.ok) {
       throw new Error(data.error || 'Registration failed');
     }
@@ -60,7 +69,7 @@ export const AuthService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
     if (!res.ok) {
       throw new Error(data.error || 'Login failed');
     }
@@ -87,11 +96,15 @@ export const AuthService = {
       }
     });
     if (!res.ok) {
-      const err = await res.json();
       if (res.status === 403) {
         await AuthService.signOut();
       }
-      throw new Error(err.error || 'Failed to sync user');
+      let errMessage = 'Failed to sync user';
+      try {
+        const err = await parseJsonResponse(res);
+        errMessage = err.error || errMessage;
+      } catch (e) {}
+      throw new Error(errMessage);
     }
   }
 };
