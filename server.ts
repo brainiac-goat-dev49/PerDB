@@ -3,7 +3,7 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ToothDbService } from './services/toothDbService.js';
+import { ToothDbClient } from './lib/toothdb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,7 +51,7 @@ function flushStats() {
   console.log(`[Stats] Flushing stats for ${statsBuffer.size} projects to ToothDB...`);
   statsBuffer.forEach(async (stats, projectId) => {
     try {
-      await ToothDbService.incrementStats(projectId, stats.reads, stats.writes);
+      await ToothDbClient.incrementStats(projectId, stats.reads, stats.writes);
     } catch (e) {
       console.error(`[Stats] Failed to flush stats for ${projectId}:`, e);
     }
@@ -97,12 +97,12 @@ async function startServer() {
 
       const cleanEmail = email.toLowerCase().trim();
 
-      const isBanned = await ToothDbService.isUserBanned('', cleanEmail);
+      const isBanned = await ToothDbClient.isUserBanned('', cleanEmail);
       if (isBanned) {
         return res.status(403).json({ error: 'This email is permanently banned from PerDB.' });
       }
 
-      const users = await ToothDbService.getAllUsers();
+      const users = await ToothDbClient.getAllUsers();
       const existing = users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
       if (existing) {
         return res.status(400).json({ error: 'Email already in use' });
@@ -122,7 +122,7 @@ async function startServer() {
         lastLogin: new Date().toISOString()
       };
 
-      await ToothDbService.syncUser(newUser);
+      await ToothDbClient.syncUser(newUser);
 
       const tokenPayload = { uid, email: cleanEmail, displayName, role };
       const token = Buffer.from(JSON.stringify(tokenPayload)).toString('base64');
@@ -147,7 +147,7 @@ async function startServer() {
 
       const cleanEmail = email.toLowerCase().trim();
 
-      const users = await ToothDbService.getAllUsers();
+      const users = await ToothDbClient.getAllUsers();
       const user = users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
 
       if (!user) {
@@ -160,7 +160,7 @@ async function startServer() {
 
       const uid = user.id || user._id;
 
-      const isBanned = await ToothDbService.isUserBanned(uid, cleanEmail);
+      const isBanned = await ToothDbClient.isUserBanned(uid, cleanEmail);
       if (isBanned || user.isBanned) {
         return res.status(403).json({ error: 'This account has been permanently banned from PerDB.' });
       }
@@ -168,7 +168,7 @@ async function startServer() {
       const role = cleanEmail === 'testimonyfresh49@gmail.com' ? 'admin' : (user.role || 'user');
       const displayName = user.displayName || 'User';
 
-      await ToothDbService.updateUser(uid, { lastLogin: new Date().toISOString() });
+      await ToothDbClient.updateUser(uid, { lastLogin: new Date().toISOString() });
 
       const tokenPayload = { uid, email: cleanEmail, displayName, role };
       const token = Buffer.from(JSON.stringify(tokenPayload)).toString('base64');
@@ -190,12 +190,12 @@ async function startServer() {
       const { uid, email, displayName } = decoded;
       const userEmail = email || '';
 
-      const isBanned = await ToothDbService.isUserBanned(uid, userEmail);
+      const isBanned = await ToothDbClient.isUserBanned(uid, userEmail);
       if (isBanned) {
         return res.status(403).json({ error: 'This account has been permanently banned from PerDB.' });
       }
 
-      await ToothDbService.syncUser({
+      await ToothDbClient.syncUser({
         id: uid,
         email: userEmail,
         displayName: displayName || 'User',
@@ -213,7 +213,7 @@ async function startServer() {
   app.get("/api/projects", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
-      const projects = await ToothDbService.getProjectsByOwner(decoded.uid);
+      const projects = await ToothDbClient.getProjectsByOwner(decoded.uid);
       res.json(projects);
     } catch (error: any) {
       console.error("Get Projects Error:", error);
@@ -227,7 +227,7 @@ async function startServer() {
       const { name } = req.body;
       if (!name) return res.status(400).json({ error: 'Missing project name' });
 
-      const existing = await ToothDbService.getProjectsByOwner(decoded.uid);
+      const existing = await ToothDbClient.getProjectsByOwner(decoded.uid);
       if (existing.length >= 5) {
         return res.status(400).json({ error: 'Project Limit Reached: You can only have up to 5 projects. Please delete an existing project to create a new one.' });
       }
@@ -261,7 +261,7 @@ async function startServer() {
         stats: { reads: 0, writes: 0 }
       };
 
-      const created = await ToothDbService.createProject(newProject);
+      const created = await ToothDbClient.createProject(newProject);
       res.json(created);
     } catch (error: any) {
       console.error("Create Project Error:", error);
@@ -275,7 +275,7 @@ async function startServer() {
       const { id } = req.params;
       const { name, permissions, rules, stats, collectionList } = req.body;
 
-      const proj = await ToothDbService.getProjectById(id);
+      const proj = await ToothDbClient.getProjectById(id);
       if (!proj || proj.ownerId !== decoded.uid) {
         return res.status(403).json({ error: 'Forbidden or Project not found' });
       }
@@ -287,7 +287,7 @@ async function startServer() {
       if (stats !== undefined) cleanData.stats = stats;
       if (collectionList !== undefined) cleanData.collectionList = collectionList;
 
-      await ToothDbService.updateProject(id, cleanData);
+      await ToothDbClient.updateProject(id, cleanData);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Update Project Error:", error);
@@ -300,12 +300,12 @@ async function startServer() {
       const decoded = await getAuthenticatedUser(req);
       const { id } = req.params;
 
-      const proj = await ToothDbService.getProjectById(id);
+      const proj = await ToothDbClient.getProjectById(id);
       if (!proj || proj.ownerId !== decoded.uid) {
         return res.status(403).json({ error: 'Forbidden or Project not found' });
       }
 
-      await ToothDbService.deleteProject(id);
+      await ToothDbClient.deleteProject(id);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Delete Project Error:", error);
@@ -318,12 +318,12 @@ async function startServer() {
       const decoded = await getAuthenticatedUser(req);
       const { id } = req.params;
 
-      const proj = await ToothDbService.getProjectById(id);
+      const proj = await ToothDbClient.getProjectById(id);
       if (!proj || proj.ownerId !== decoded.uid) {
         return res.status(403).json({ error: 'Forbidden or Project not found' });
       }
 
-      const cols = await ToothDbService.getProjectCollections(id);
+      const cols = await ToothDbClient.getProjectCollections(id);
       res.json(cols);
     } catch (error: any) {
       console.error("Get Collections Error:", error);
@@ -336,12 +336,12 @@ async function startServer() {
       const decoded = await getAuthenticatedUser(req);
       const { id, colName } = req.params;
 
-      const proj = await ToothDbService.getProjectById(id);
+      const proj = await ToothDbClient.getProjectById(id);
       if (!proj || proj.ownerId !== decoded.uid) {
         return res.status(403).json({ error: 'Forbidden or Project not found' });
       }
 
-      const preview = await ToothDbService.getCollectionPreview(id, colName);
+      const preview = await ToothDbClient.getCollectionPreview(id, colName);
       res.json(preview);
     } catch (error: any) {
       console.error("Get Collection Preview Error:", error);
@@ -355,12 +355,12 @@ async function startServer() {
       const { id, colName } = req.params;
       const limitCount = parseInt(req.query.limit as string) || 50;
 
-      const proj = await ToothDbService.getProjectById(id);
+      const proj = await ToothDbClient.getProjectById(id);
       if (!proj || proj.ownerId !== decoded.uid) {
         return res.status(403).json({ error: 'Forbidden or Project not found' });
       }
 
-      const entries = await ToothDbService.getDocuments(id, colName, limitCount);
+      const entries = await ToothDbClient.getDocuments(id, colName, limitCount);
       res.json({ entries, lastDoc: null });
     } catch (error: any) {
       console.error("Get Full Collection Error:", error);
@@ -375,7 +375,7 @@ async function startServer() {
       if (decoded.email !== 'testimonyfresh49@gmail.com') {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
-      const users = await ToothDbService.getAllUsers();
+      const users = await ToothDbClient.getAllUsers();
       res.json(users);
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch users' });
@@ -388,7 +388,7 @@ async function startServer() {
       if (decoded.email !== 'testimonyfresh49@gmail.com') {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
-      const feedback = await ToothDbService.getFeedback();
+      const feedback = await ToothDbClient.getFeedback();
       res.json(feedback);
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch feedback' });
@@ -402,7 +402,7 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
       const { userId, updates } = req.body;
-      await ToothDbService.updateUser(userId, updates);
+      await ToothDbClient.updateUser(userId, updates);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to update user' });
@@ -418,17 +418,17 @@ async function startServer() {
       const { userId } = req.body;
       if (!userId) return res.status(400).json({ error: 'Missing User ID' });
 
-      const user = await ToothDbService.getUser(userId);
+      const user = await ToothDbClient.getUser(userId);
       if (user?.email) {
-        await ToothDbService.banEmail(user.email, 'Full account deletion by admin');
+        await ToothDbClient.banEmail(user.email, 'Full account deletion by admin');
       }
 
-      const projects = await ToothDbService.getProjectsByOwner(userId);
+      const projects = await ToothDbClient.getProjectsByOwner(userId);
       for (const p of projects) {
-        await ToothDbService.deleteProject(p.id);
+        await ToothDbClient.deleteProject(p.id);
       }
 
-      await ToothDbService.updateUser(userId, { isBanned: true, isDeleted: true });
+      await ToothDbClient.updateUser(userId, { isBanned: true, isDeleted: true });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to perform full user deletion' });
@@ -439,7 +439,7 @@ async function startServer() {
     try {
       const { name, email, message } = req.body;
       if (!message) return res.status(400).json({ error: 'Message is required' });
-      await ToothDbService.addFeedback({ name, email, message });
+      await ToothDbClient.addFeedback({ name, email, message });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to save feedback' });
@@ -469,7 +469,7 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden: Admin access only' });
       }
       const { id } = req.params;
-      await ToothDbService.deleteFeedback(id);
+      await ToothDbClient.deleteFeedback(id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to delete feedback' });
@@ -507,7 +507,7 @@ async function startServer() {
         projectData = cachedProject.doc;
         projectId = projectData.id;
       } else {
-        const project = await ToothDbService.getProjectByApiKey(apiKeyStr);
+        const project = await ToothDbClient.getProjectByApiKey(apiKeyStr);
         if (!project) {
           return res.status(403).json({ error: 'Invalid API Key' });
         }
@@ -567,7 +567,7 @@ async function startServer() {
       if (req.method === 'POST') {
         const payload = req.body;
         const docId = Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
-        const newId = await ToothDbService.addDocument(projectId, collectionName, docId, payload);
+        const newId = await ToothDbClient.addDocument(projectId, collectionName, docId, payload);
 
         const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
         stats.writes++;
@@ -579,7 +579,7 @@ async function startServer() {
       // --- GET: Read ---
       if (req.method === 'GET') {
         const limit = parseInt(req.query.limit as string) || 50;
-        const docs = await ToothDbService.getDocuments(projectId, collectionName, limit);
+        const docs = await ToothDbClient.getDocuments(projectId, collectionName, limit);
 
         const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
         stats.reads++;
@@ -592,7 +592,7 @@ async function startServer() {
       if (req.method === 'PUT') {
         const docId = req.query.id as string;
         if (!docId) return res.status(400).json({ error: 'Missing document id parameter' });
-        await ToothDbService.addDocument(projectId, collectionName, docId, req.body);
+        await ToothDbClient.addDocument(projectId, collectionName, docId, req.body);
         const stats = statsBuffer.get(projectId) || { reads: 0, writes: 0 };
         stats.writes++;
         statsBuffer.set(projectId, stats);
