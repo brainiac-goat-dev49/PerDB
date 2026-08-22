@@ -189,22 +189,7 @@ export const PerDbService = {
   },
 
   updateUserStatus: async (userId: string, isBanned: boolean): Promise<void> => {
-    const token = AuthService.getToken();
-    if (!token) throw new Error("Unauthorized");
-
-    const res = await fetch('/api/admin/update-user', {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ userId, updates: { isBanned } })
-    });
-    
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Failed to update user status');
-    }
+    // Disabled functionality
   },
 
   deleteUser: async (userId: string): Promise<void> => {

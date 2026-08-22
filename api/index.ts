@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
+import path from 'path';
 import { ToothDbClient } from '../lib/toothdb.js';
 
 const app = express();
@@ -32,6 +33,7 @@ async function getAuthenticatedUser(req: any) {
   }
 }
 
+// Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", database: "ToothDB" });
 });
@@ -40,6 +42,7 @@ app.get("/api/config", (req, res) => {
   res.json({ usePostgres: false, useToothDb: true });
 });
 
+// Auth Routes
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { email, password, displayName } = req.body;
@@ -50,10 +53,7 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ error: 'Password should be at least 6 characters' });
     }
     const cleanEmail = email.toLowerCase().trim();
-    const isBanned = await ToothDbClient.isUserBanned('', cleanEmail);
-    if (isBanned) {
-      return res.status(403).json({ error: 'This email is permanently banned from PerDB.' });
-    }
+    
     const users = await ToothDbClient.getAllUsers();
     const existing = users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
     if (existing) {
@@ -67,7 +67,6 @@ app.post("/api/auth/register", async (req, res) => {
       displayName,
       password,
       role,
-      isBanned: false,
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString()
     };
@@ -93,10 +92,7 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
     const uid = user.id || user._id;
-    const isBanned = await ToothDbClient.isUserBanned(uid, cleanEmail);
-    if (isBanned || user.isBanned) {
-      return res.status(403).json({ error: 'This account has been permanently banned from PerDB.' });
-    }
+
     const role = cleanEmail === 'testimonyfresh49@gmail.com' ? 'admin' : (user.role || 'user');
     const displayName = user.displayName || 'User';
     await ToothDbClient.updateUser(uid, { lastLogin: new Date().toISOString() });
@@ -113,10 +109,7 @@ app.post("/api/user/sync", async (req, res) => {
     const decoded = await getAuthenticatedUser(req);
     const { uid, email, displayName } = decoded;
     const userEmail = email || '';
-    const isBanned = await ToothDbClient.isUserBanned(uid, userEmail);
-    if (isBanned) {
-      return res.status(403).json({ error: 'This account has been permanently banned from PerDB.' });
-    }
+
     await ToothDbClient.syncUser({
       id: uid,
       email: userEmail,
@@ -129,6 +122,7 @@ app.post("/api/user/sync", async (req, res) => {
   }
 });
 
+// Project Routes
 app.get("/api/projects", async (req, res) => {
   try {
     const decoded = await getAuthenticatedUser(req);
@@ -312,15 +306,12 @@ app.post("/api/admin/delete-user-full", async (req, res) => {
     }
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing User ID' });
-    const user = await ToothDbClient.getUser(userId);
-    if (user?.email) {
-      await ToothDbClient.banEmail(user.email, 'Full account deletion by admin');
-    }
+    
     const projects = await ToothDbClient.getProjectsByOwner(userId);
     for (const p of projects) {
       await ToothDbClient.deleteProject(p.id);
     }
-    await ToothDbClient.updateUser(userId, { isBanned: true, isDeleted: true });
+    await ToothDbClient.updateUser(userId, { isDeleted: true });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to perform full user deletion' });

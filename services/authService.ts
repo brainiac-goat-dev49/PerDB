@@ -24,15 +24,15 @@ async function parseJsonResponse(res: Response) {
 export const AuthService = {
   getUser: (): User | null => {
     try {
-      const stored = localStorage.getItem(USER_KEY);
-      return stored ? JSON.parse(stored) : null;
+      const sessionStored = sessionStorage.getItem(USER_KEY) || localStorage.getItem(USER_KEY);
+      return sessionStored ? JSON.parse(sessionStored) : null;
     } catch (e) {
       return null;
     }
   },
 
   getToken: (): string | null => {
-    return localStorage.getItem(TOKEN_KEY);
+    return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
   },
 
   onAuthStateChanged: (callback: AuthStateCallback) => {
@@ -57,6 +57,8 @@ export const AuthService = {
     if (!res.ok) {
       throw new Error(data.error || 'Registration failed');
     }
+    sessionStorage.setItem(TOKEN_KEY, data.token);
+    sessionStorage.setItem(USER_KEY, JSON.stringify(data.user));
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
     AuthService.notifyListeners(data.user);
@@ -73,6 +75,8 @@ export const AuthService = {
     if (!res.ok) {
       throw new Error(data.error || 'Login failed');
     }
+    sessionStorage.setItem(TOKEN_KEY, data.token);
+    sessionStorage.setItem(USER_KEY, JSON.stringify(data.user));
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
     AuthService.notifyListeners(data.user);
@@ -80,8 +84,11 @@ export const AuthService = {
   },
 
   signOut: async (): Promise<void> => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    try {
+      sessionStorage.clear();
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    } catch (e) {}
     AuthService.notifyListeners(null);
   },
 
@@ -96,7 +103,7 @@ export const AuthService = {
       }
     });
     if (!res.ok) {
-      if (res.status === 403) {
+      if (res.status === 403 || res.status === 401) {
         await AuthService.signOut();
       }
       let errMessage = 'Failed to sync user';

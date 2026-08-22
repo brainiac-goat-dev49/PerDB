@@ -57,16 +57,12 @@ export const Admin: React.FC = () => {
   };
 
   const handleToggleBan = async (userId: string, currentStatus: boolean) => {
-    try {
-      await PerDbService.updateUserStatus(userId, !currentStatus);
-      setUsers(users.map(u => u.id === userId ? { ...u, isBanned: !currentStatus } : u));
-    } catch (err) {
-      alert("Failed to update user status");
-    }
+    // Disabled in this pure configuration
+    alert("Ban functionality is not supported in this version.");
   };
 
   const handleDeleteUserFull = async (userId: string, email: string) => {
-    if (!confirm(`CRITICAL: Are you sure you want to delete user ${email} and ALL their data? This will also ban their email from future use. This action is irreversible.`)) return;
+    if (!confirm(`CRITICAL: Are you sure you want to delete user ${email} and ALL their data? This action is irreversible.`)) return;
     
     try {
       setLoading(true);
@@ -216,7 +212,6 @@ export const Admin: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <h3 className="text-white font-semibold">{user.displayName || 'Anonymous User'}</h3>
                           {user.role === 'admin' && <Badge variant="brand">Admin</Badge>}
-                          {user.isBanned && <Badge variant="danger">Banned</Badge>}
                         </div>
                         <p className="text-sm text-slate-500 flex items-center gap-1.5">
                           <Mail className="w-3.5 h-3.5" />
@@ -232,16 +227,6 @@ export const Admin: React.FC = () => {
                           {user.lastLogin?.toDate ? user.lastLogin.toDate().toLocaleString() : 'Never'}
                         </p>
                       </div>
-                      
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={user.isBanned ? "text-emerald-400 hover:bg-emerald-500/10" : "text-red-400 hover:bg-red-500/10"}
-                        onClick={() => handleToggleBan(user.id, user.isBanned)}
-                      >
-                        {user.isBanned ? <CheckCircle className="w-4 h-4 mr-2" /> : <Ban className="w-4 h-4 mr-2" />}
-                        {user.isBanned ? 'Unban' : 'Ban'}
-                      </Button>
                       
                       <Button
                         variant="ghost"
