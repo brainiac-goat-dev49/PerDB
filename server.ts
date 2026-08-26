@@ -367,6 +367,10 @@ async function startServer() {
         return res.json({ success: true, id: docId });
       }
       if (req.method === 'DELETE') {
+        const docId = req.query.id as string;
+        if (docId) {
+          await ToothDbClient.deleteDocument(project.id, collectionName, docId);
+        }
         return res.json({ success: true });
       }
       return res.status(405).json({ error: 'Method Not Allowed' });

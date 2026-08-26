@@ -86,8 +86,7 @@ export const AuthService = {
   signOut: async (): Promise<void> => {
     try {
       sessionStorage.clear();
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
+      localStorage.clear();
     } catch (e) {}
     AuthService.notifyListeners(null);
   },

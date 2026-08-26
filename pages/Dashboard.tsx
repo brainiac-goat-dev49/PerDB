@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Database, Key, Trash2, RefreshCw, Layers, Table as TableIcon, FileJson, Search, Pencil, Save, X, ChevronLeft, ChevronRight, Shield, Play, CheckCircle, XCircle } from 'lucide-react';
 import { PerDbService } from '../services/perDbService';
+import { AuthService } from '../services/authService';
 import { Project, Collection, DBEntry } from '../types';
 import { Button, Card, Input, Badge, Modal, ConfirmationModal, AlertModal } from '../components/ui';
 
@@ -952,7 +953,16 @@ export const Dashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchProjects();
+    const unsub = AuthService.onAuthStateChanged((currentUser) => {
+      if (!currentUser) {
+        setProjects([]);
+        setSelectedProject(null);
+        setLoading(false);
+      } else {
+        fetchProjects();
+      }
+    });
+    return () => unsub();
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -974,9 +984,14 @@ export const Dashboard: React.FC = () => {
 
   const handleDeleteProject = async () => {
     if (!deleteConfirmation) return;
+    const targetId = deleteConfirmation;
     setLoading(true);
     try {
-      await PerDbService.deleteProject(deleteConfirmation);
+      if (selectedProject?.id === targetId) {
+        setSelectedProject(null);
+      }
+      setProjects(prev => prev.filter(p => p.id !== targetId));
+      await PerDbService.deleteProject(targetId);
       setDeleteConfirmation(null);
       await fetchProjects();
     } catch (e) {

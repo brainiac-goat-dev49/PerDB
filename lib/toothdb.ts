@@ -148,12 +148,15 @@ export const ToothDbClient = {
     if (!userId) return null;
     const res = await toothDbRequest('GET', 'users', { limit: 1000 });
     const users = normalizeArray(res);
-    return users.find((u: any) => (u.id === userId || u._id === userId || u.docId === userId)) || null;
+    const found = users.find((u: any) => (u.id === userId || u._id === userId || u.docId === userId));
+    if (!found || found.isDeleted || found.deleted || found.status === 'deleted' || found._deleted) return null;
+    return found;
   },
 
   getAllUsers: async (): Promise<any[]> => {
     const res = await toothDbRequest('GET', 'users', { limit: 1000 });
-    return normalizeArray(res);
+    const users = normalizeArray(res);
+    return users.filter((u: any) => !u.isDeleted && !u.deleted && u.status !== 'deleted' && !u._deleted);
   },
 
   updateUser: async (userId: string, updates: Partial<any>): Promise<void> => {
@@ -183,6 +186,7 @@ export const ToothDbClient = {
     const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
     const rawList = normalizeArray(res);
     return rawList
+      .filter((p: any) => !p.isDeleted && !p.deleted && p.status !== 'deleted' && !p._deleted)
       .map(ToothDbClient.mapToProject)
       .filter(p => p.ownerId === ownerId);
   },
@@ -190,14 +194,20 @@ export const ToothDbClient = {
   getProjectByApiKey: async (apiKey: string): Promise<Project | null> => {
     const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
     const rawList = normalizeArray(res);
-    const found = rawList.map(ToothDbClient.mapToProject).find(p => p.apiKey === apiKey);
+    const found = rawList
+      .filter((p: any) => !p.isDeleted && !p.deleted && p.status !== 'deleted' && !p._deleted)
+      .map(ToothDbClient.mapToProject)
+      .find(p => p.apiKey === apiKey);
     return found || null;
   },
 
   getProjectById: async (id: string): Promise<Project | null> => {
     const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
     const rawList = normalizeArray(res);
-    const found = rawList.map(ToothDbClient.mapToProject).find(p => p.id === id);
+    const found = rawList
+      .filter((p: any) => !p.isDeleted && !p.deleted && p.status !== 'deleted' && !p._deleted)
+      .map(ToothDbClient.mapToProject)
+      .find(p => p.id === id);
     return found || null;
   },
 
@@ -234,16 +244,34 @@ export const ToothDbClient = {
   },
 
   deleteProject: async (id: string): Promise<void> => {
+    // 1. Send DELETE request
     await toothDbRequest('DELETE', 'projects', { id });
+    // 2. Also send soft-delete update to ensure ToothDB excludes it across all query styles
+    try {
+      await toothDbRequest('PUT', 'projects', { id }, { 
+        id, 
+        isDeleted: true, 
+        deleted: true, 
+        status: 'deleted', 
+        updatedAt: new Date().toISOString() 
+      });
+    } catch (e) {}
   },
 
   getProjectCollections: async (projectId: string): Promise<Collection[]> => {
     const proj = await ToothDbClient.getProjectById(projectId);
+    if (!proj) return [];
     const knownCollectionNames = new Set<string>(proj?.collectionList || ['users']);
 
     const res = await toothDbRequest('GET', 'documents', { limit: 1000 });
     const allDocs = normalizeArray(res);
-    const projectDocs = allDocs.filter((d: any) => d.projectId === projectId);
+    const projectDocs = allDocs.filter((d: any) => 
+      d.projectId === projectId && 
+      !d.isDeleted && 
+      !d.deleted && 
+      d.status !== 'deleted' && 
+      !d._deleted
+    );
 
     const counts: Record<string, number> = {};
     projectDocs.forEach((d: any) => {
@@ -277,7 +305,14 @@ export const ToothDbClient = {
     const res = await toothDbRequest('GET', 'documents', { limit: 1000 });
     const allDocs = normalizeArray(res);
     const filtered = allDocs
-      .filter((d: any) => d.projectId === projectId && d.collectionName === collectionName)
+      .filter((d: any) => 
+        d.projectId === projectId && 
+        d.collectionName === collectionName && 
+        !d.isDeleted && 
+        !d.deleted && 
+        d.status !== 'deleted' && 
+        !d._deleted
+      )
       .map((d: any) => ({
         id: d.docId || d.id || d._id,
         ...d.data,
@@ -298,12 +333,31 @@ export const ToothDbClient = {
       collectionName,
       docId: finalDocId,
       data,
+      isDeleted: false,
+      deleted: false,
       createdAt: now,
       updatedAt: now
     };
 
     await toothDbRequest('POST', 'documents', {}, payload);
     return finalDocId;
+  },
+
+  deleteDocument: async (projectId: string, collectionName: string, docId: string): Promise<void> => {
+    const id = `${projectId}_${collectionName}_${docId}`;
+    await toothDbRequest('DELETE', 'documents', { id });
+    try {
+      await toothDbRequest('PUT', 'documents', { id }, {
+        id,
+        projectId,
+        collectionName,
+        docId,
+        isDeleted: true,
+        deleted: true,
+        status: 'deleted',
+        updatedAt: new Date().toISOString()
+      });
+    } catch (e) {}
   },
 
   incrementStats: async (projectId: string, reads: number, writes: number): Promise<void> => {
