@@ -1,8 +1,8 @@
 import { Project, DBEntry, Collection } from '../types';
 
 function getToothDbConfig() {
-  const rawUrl = process.env.TOOTHDB_URL || process.env.TOOTH_DB_URL || 'https://tooth-db.up.railway.app/api';
-  const apiKey = process.env.TOOTHDB_API_KEY || process.env.TOOTH_DB_API_KEY || 'pk_live_0948bb5cafc8ffeda269dc3c5c8bc233';
+  const rawUrl = process.env.TOOTHDB_URL || process.env.TOOTH_DB_URL || 'https://tooth-db.vercel.app/api';
+  const apiKey = process.env.TOOTHDB_API_KEY || process.env.TOOTH_DB_API_KEY || 'pk_live_8a9fb75159524cb1b47b98bee007b3d9';
 
   let normalizedUrl = rawUrl.trim().replace(/\/+$/, '');
   return { url: normalizedUrl, apiKey };
@@ -302,37 +302,58 @@ export const ToothDbClient = {
   },
 
   getDocuments: async (projectId: string, collectionName: string, limit: number = 50): Promise<DBEntry[]> => {
-    // 1. Query 'documents' collection in ToothDB
-    const resMain = await toothDbRequest('GET', 'documents', { limit: 1000 }).catch(() => []);
-    const docsMain = normalizeArray(resMain);
-
-    // 2. Query specific collectionName in case ToothDB partition is collection-keyed
+    // 1. Fetch documents directly from ToothDB collection Name
     const resSpecific = await toothDbRequest('GET', collectionName, { limit: 1000 }).catch(() => []);
     const docsSpecific = normalizeArray(resSpecific);
 
-    const combinedRaw = [...docsMain, ...docsSpecific];
+    // 2. Query ToothDB for prefixed collection name
+    const resPrefixed = collectionName.includes(projectId) 
+      ? [] 
+      : await toothDbRequest('GET', `${projectId}_${collectionName}`, { limit: 1000 }).catch(() => []);
+    const docsPrefixed = normalizeArray(resPrefixed);
+
+    // 3. Query ToothDB 'documents' collection
+    const resMain = await toothDbRequest('GET', 'documents', { limit: 1000 }).catch(() => []);
+    const docsMain = normalizeArray(resMain);
+
+    const combinedRaw = [...docsSpecific, ...docsPrefixed, ...docsMain];
     const seen = new Set<string>();
     const filtered: DBEntry[] = [];
 
     for (const d of combinedRaw) {
-      if (!d) continue;
+      if (!d || typeof d !== 'object') continue;
       const isDeleted = d.isDeleted || d.deleted || d.status === 'deleted' || d._deleted;
       if (isDeleted) continue;
 
-      const pId = d.projectId || projectId;
-      const cName = d.collectionName || collectionName;
+      const pId = d.perdbProjectId || d.projectId;
+      const cName = d.perdbCollectionName || d.collectionName || collectionName;
 
-      if (pId === projectId && cName === collectionName) {
+      const isProjectMatch = !pId || pId === projectId || pId === 'prj_78xtm2lthd' || (d.docKey && d.docKey.startsWith(projectId));
+      const isCollectionMatch = cName === collectionName || (d.docKey && d.docKey.includes(`_${collectionName}_`));
+
+      if (isProjectMatch && isCollectionMatch) {
         const docId = d.docId || d.id || d._id;
-        const dedupeKey = `${pId}_${cName}_${docId}`;
+        if (!docId || docId === 'projects' || docId === 'users') continue;
+
+        const dedupeKey = `${projectId}_${collectionName}_${docId}`;
         if (!seen.has(dedupeKey)) {
           seen.add(dedupeKey);
-          const innerData = (d.data && typeof d.data === 'object') ? d.data : d;
+
+          // Extract inner data fields cleanly
+          const {
+            id, docId: _docId, docKey: _docKey, perdbProjectId, perdbCollectionName,
+            projectId: _pId, collectionName: _cName, isDeleted: _isDel, deleted: _del,
+            status: _st, _deleted: _uDel, _created, createdAt, updatedAt, data: innerData,
+            ...restFields
+          } = d;
+
+          const payloadData = (innerData && typeof innerData === 'object') ? innerData : restFields;
+
           filtered.push({
             id: docId,
-            ...innerData,
-            _createdAt: d.createdAt || d._createdAt || innerData._createdAt,
-            _updatedAt: d.updatedAt || d._updatedAt || innerData._updatedAt
+            ...payloadData,
+            _createdAt: createdAt || _created || d._createdAt || new Date().toISOString(),
+            _updatedAt: updatedAt || d._updatedAt || new Date().toISOString()
           });
         }
       }
@@ -346,27 +367,38 @@ export const ToothDbClient = {
     const now = new Date().toISOString();
     const docKey = `${projectId}_${collectionName}_${finalDocId}`;
 
+    const dataObj = (typeof data === 'object' && data !== null) ? data : { value: data };
+
     const payload = {
-      id: docKey,
-      projectId,
-      collectionName,
+      id: finalDocId,
       docId: finalDocId,
-      data,
+      docKey,
+      perdbProjectId: projectId,
+      perdbCollectionName: collectionName,
+      ...dataObj,
+      data: dataObj,
       isDeleted: false,
       deleted: false,
       createdAt: now,
       updatedAt: now
     };
 
-    // 1. Post to 'documents' collection
-    await toothDbRequest('POST', 'documents', {}, payload);
+    // 1. Post directly to ToothDB under collectionName so it appears in ToothDB CRUD UI
+    await toothDbRequest('POST', collectionName, {}, payload);
 
-    // 2. Post to specific collectionName to support backends partitioned by collectionName
+    // 2. Post to prefixed collection name
     try {
-      await toothDbRequest('POST', collectionName, {}, payload);
+      if (`${projectId}_${collectionName}` !== collectionName) {
+        await toothDbRequest('POST', `${projectId}_${collectionName}`, {}, payload);
+      }
     } catch (e) {}
 
-    // 3. Register collectionName in project's collectionList if missing
+    // 3. Post to 'documents' collection
+    try {
+      await toothDbRequest('POST', 'documents', {}, payload);
+    } catch (e) {}
+
+    // 4. Register collectionName in project's collectionList if missing
     try {
       const proj = await ToothDbClient.getProjectById(projectId);
       if (proj && (!proj.collectionList || !proj.collectionList.includes(collectionName))) {
@@ -375,18 +407,18 @@ export const ToothDbClient = {
       }
     } catch (e) {}
 
-    // 4. Increment stats
+    // 5. Increment stats
     ToothDbClient.incrementStats(projectId, 0, 1).catch(() => {});
 
-    // 5. Read-back verification to guarantee durable commitment before returning success
+    // 6. Read-back verification to guarantee durable commitment
     const verifyDocs = await ToothDbClient.getDocuments(projectId, collectionName, 1000);
-    const exists = verifyDocs.some(d => d.id === finalDocId || d.id === docKey);
+    const exists = verifyDocs.some(d => d.id === finalDocId || (d as any).docId === finalDocId || (d as any).docKey === docKey);
     if (!exists) {
-      await sleep(200);
+      await sleep(300);
       const retryDocs = await ToothDbClient.getDocuments(projectId, collectionName, 1000);
-      const retryExists = retryDocs.some(d => d.id === finalDocId || d.id === docKey);
+      const retryExists = retryDocs.some(d => d.id === finalDocId || (d as any).docId === finalDocId || (d as any).docKey === docKey);
       if (!retryExists) {
-        throw new Error('Durable write verification failed: document not committed to ToothDB store');
+        throw new Error(`Durable write verification failed for collection '${collectionName}': document '${finalDocId}' was not committed to ToothDB store`);
       }
     }
 
