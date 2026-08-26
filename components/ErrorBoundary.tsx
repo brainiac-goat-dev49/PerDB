@@ -29,18 +29,7 @@ export class ErrorBoundary extends React.Component<any, any> {
 
   public render() {
     if ((this as any).state.hasError) {
-      let errorMessage = 'Something went wrong.';
-      let isFirestoreError = false;
-
-      try {
-        const parsed = JSON.parse((this as any).state.error?.message || '');
-        if (parsed.operationType && parsed.authInfo) {
-          isFirestoreError = true;
-          errorMessage = `Firestore Error: ${parsed.error} during ${parsed.operationType} on ${parsed.path}`;
-        }
-      } catch (e) {
-        errorMessage = (this as any).state.error?.message || errorMessage;
-      }
+      const errorMessage = (this as any).state.error?.message || 'Something went wrong.';
 
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -52,7 +41,7 @@ export class ErrorBoundary extends React.Component<any, any> {
             </div>
             <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">Application Error</h2>
             <p className="text-gray-600 text-center mb-6">
-              {isFirestoreError ? 'A database permission error occurred.' : 'An unexpected error occurred while running the application.'}
+              An unexpected error occurred while running the application.
             </p>
             <div className="bg-red-50 rounded-lg p-4 mb-6 overflow-auto max-h-40">
               <code className="text-sm text-red-800 break-all whitespace-pre-wrap font-mono">

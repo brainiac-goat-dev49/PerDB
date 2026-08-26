@@ -118,7 +118,8 @@ export const PerDbService = {
       body: JSON.stringify(feedback)
     });
     if (!res.ok) {
-      // fallback silent success
+      const err = await res.json().catch(() => ({ error: 'Failed to send feedback' }));
+      throw new Error(err.error || 'Failed to send feedback');
     }
   },
 

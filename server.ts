@@ -39,17 +39,19 @@ async function startServer() {
     }
   }
 
-  // Health check
-  app.get("/api/health", (req, res) => {
+  const router = express.Router();
+
+  // Health check & Config
+  router.get("/health", (req, res) => {
     res.json({ status: "ok", database: "ToothDB" });
   });
 
-  app.get("/api/config", (req, res) => {
+  router.get("/config", (req, res) => {
     res.json({ usePostgres: false, useToothDb: true });
   });
 
   // Auth Routes
-  app.post("/api/auth/register", async (req, res) => {
+  router.post("/auth/register", async (req, res) => {
     try {
       const { email, password, displayName } = req.body;
       if (!email || !password || !displayName) {
@@ -85,7 +87,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  router.post("/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body;
       if (!email || !password) {
@@ -110,7 +112,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/user/sync", async (req, res) => {
+  router.post("/user/sync", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       const { uid, email, displayName } = decoded;
@@ -129,7 +131,7 @@ async function startServer() {
   });
 
   // Project Routes
-  app.get("/api/projects", async (req, res) => {
+  router.get("/projects", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       const projects = await ToothDbClient.getProjectsByOwner(decoded.uid);
@@ -139,7 +141,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/projects", async (req, res) => {
+  router.post("/projects", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       const { name } = req.body;
@@ -169,7 +171,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/projects/:id", async (req, res) => {
+  router.put("/projects/:id", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       const { id } = req.params;
@@ -191,7 +193,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/projects/:id", async (req, res) => {
+  router.delete("/projects/:id", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       const { id } = req.params;
@@ -206,7 +208,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/projects/:id/collections", async (req, res) => {
+  router.get("/projects/:id/collections", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       const { id } = req.params;
@@ -221,7 +223,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/projects/:id/collections/:colName", async (req, res) => {
+  router.get("/projects/:id/collections/:colName", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       const { id, colName } = req.params;
@@ -236,7 +238,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/projects/:id/collections/:colName/full", async (req, res) => {
+  router.get("/projects/:id/collections/:colName/full", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       const { id, colName } = req.params;
@@ -252,19 +254,19 @@ async function startServer() {
     }
   });
 
-  app.post("/api/feedback", async (req, res) => {
+  router.post("/feedback", async (req, res) => {
     try {
       const { name, email, message } = req.body;
       if (!message) return res.status(400).json({ error: 'Message is required' });
       await ToothDbClient.addFeedback({ name, email, message });
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to save feedback' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to save feedback' });
     }
   });
 
   // Admin Routes
-  app.get("/api/admin/users", async (req, res) => {
+  router.get("/admin/users", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       if (decoded.email !== 'testimonyfresh49@gmail.com') {
@@ -272,12 +274,12 @@ async function startServer() {
       }
       const users = await ToothDbClient.getAllUsers();
       res.json(users);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch users' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch users' });
     }
   });
 
-  app.get("/api/admin/feedback", async (req, res) => {
+  router.get("/admin/feedback", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       if (decoded.email !== 'testimonyfresh49@gmail.com') {
@@ -285,12 +287,12 @@ async function startServer() {
       }
       const feedback = await ToothDbClient.getFeedback();
       res.json(feedback);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch feedback' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch feedback' });
     }
   });
 
-  app.post("/api/admin/update-user", async (req, res) => {
+  router.post("/admin/update-user", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       if (decoded.email !== 'testimonyfresh49@gmail.com') {
@@ -299,12 +301,12 @@ async function startServer() {
       const { userId, updates } = req.body;
       await ToothDbClient.updateUser(userId, updates);
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to update user' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to update user' });
     }
   });
 
-  app.post("/api/admin/delete-user-full", async (req, res) => {
+  router.post("/admin/delete-user-full", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       if (decoded.email !== 'testimonyfresh49@gmail.com') {
@@ -319,12 +321,12 @@ async function startServer() {
       }
       await ToothDbClient.updateUser(userId, { isDeleted: true });
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to perform full user deletion' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to perform full user deletion' });
     }
   });
 
-  app.delete("/api/admin/feedback/:id", async (req, res) => {
+  router.delete("/admin/feedback/:id", async (req, res) => {
     try {
       const decoded = await getAuthenticatedUser(req);
       if (decoded.email !== 'testimonyfresh49@gmail.com') {
@@ -333,13 +335,13 @@ async function startServer() {
       const { id } = req.params;
       await ToothDbClient.deleteFeedback(id);
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete feedback' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to delete feedback' });
     }
   });
 
-  // Runtime API
-  app.all(['/api', '/api/'], async (req, res) => {
+  // Runtime API (POST, GET, PUT, DELETE)
+  router.all(['/', ''], async (req, res) => {
     try {
       const apiKey = (req.headers['x-api-key'] || req.query.key) as string;
       if (!apiKey) {
@@ -373,6 +375,9 @@ async function startServer() {
     }
   });
 
+  // Mount API router
+  app.use('/api', router);
+
   // Static Assets and SPA Fallback (compatible with both Vite Dev and Production on Express 4 & 5)
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -398,4 +403,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});

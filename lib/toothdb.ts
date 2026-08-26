@@ -5,10 +5,6 @@ function getToothDbConfig() {
   const apiKey = process.env.TOOTHDB_API_KEY || process.env.TOOTH_DB_API_KEY || 'pk_live_0948bb5cafc8ffeda269dc3c5c8bc233';
 
   let normalizedUrl = rawUrl.trim().replace(/\/+$/, '');
-  if (!normalizedUrl.endsWith('/api') && !normalizedUrl.includes('/api?')) {
-    normalizedUrl = `${normalizedUrl}/api`;
-  }
-
   return { url: normalizedUrl, apiKey };
 }
 
@@ -24,69 +20,91 @@ async function toothDbRequest(
   collectionName: string,
   queryParams: Record<string, string | number> = {},
   body: any = null,
-  maxRetries = 2
+  maxRetries = 1
 ): Promise<any> {
-  const { url: baseUrl, apiKey } = getToothDbConfig();
+  const { url: configuredUrl, apiKey } = getToothDbConfig();
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+  // Prepare primary and alternative endpoint variants (e.g. with /api and without /api)
+  const candidateUrls: string[] = [];
+  if (configuredUrl.endsWith('/api')) {
+    candidateUrls.push(configuredUrl);
+    candidateUrls.push(configuredUrl.replace(/\/api$/, ''));
+  } else {
+    candidateUrls.push(`${configuredUrl}/api`);
+    candidateUrls.push(configuredUrl);
+  }
 
-    try {
-      const url = new URL(baseUrl);
-      url.searchParams.set('key', apiKey);
-      url.searchParams.set('collection', collectionName);
+  let lastError: any = null;
 
-      for (const [key, value] of Object.entries(queryParams)) {
-        if (value !== undefined && value !== null) {
-          url.searchParams.set(key, String(value));
+  for (const baseUrl of candidateUrls) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+      try {
+        const url = new URL(baseUrl);
+        url.searchParams.set('key', apiKey);
+        url.searchParams.set('collection', collectionName);
+
+        for (const [key, value] of Object.entries(queryParams)) {
+          if (value !== undefined && value !== null) {
+            url.searchParams.set(key, String(value));
+          }
         }
-      }
 
-      const headers: Record<string, string> = {
-        'x-api-key': apiKey,
-        'Accept': 'application/json',
-      };
+        const headers: Record<string, string> = {
+          'x-api-key': apiKey,
+          'Accept': 'application/json',
+        };
 
-      const options: RequestInit = {
-        method,
-        headers,
-        signal: controller.signal,
-      };
+        const options: RequestInit = {
+          method,
+          headers,
+          signal: controller.signal,
+        };
 
-      if (body && (method === 'POST' || method === 'PUT')) {
-        headers['Content-Type'] = 'application/json';
-        options.body = JSON.stringify(body);
-      }
+        if (body && (method === 'POST' || method === 'PUT')) {
+          headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(body);
+        }
 
-      const res = await fetch(url.toString(), options);
-      clearTimeout(timeoutId);
+        const res = await fetch(url.toString(), options);
+        clearTimeout(timeoutId);
 
-      if (!res.ok) {
-        const errText = await res.text().catch(() => 'Unknown error');
-        if (res.status >= 500 && attempt < maxRetries) {
-          console.warn(`[ToothDB] Retrying ${method} ${collectionName} after status ${res.status}...`);
+        if (!res.ok) {
+          const errText = await res.text().catch(() => 'Unknown error');
+          if (res.status === 404) {
+            // Might be subpath mismatch, break inner retry to try alternate candidate URL
+            lastError = new Error(`ToothDB server error (404 Not Found at ${url.origin}${url.pathname}): ${errText.slice(0, 120)}`);
+            break;
+          }
+          if (res.status >= 500 && attempt < maxRetries) {
+            console.warn(`[ToothDB] Retrying ${method} ${collectionName} after status ${res.status}...`);
+            await sleep(400 * (attempt + 1));
+            continue;
+          }
+          throw new Error(`ToothDB server error (${res.status}): ${errText.slice(0, 150)}`);
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          return await res.json();
+        }
+        return await res.text();
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        lastError = err;
+        if (attempt < maxRetries && (err.name === 'AbortError' || err.message?.includes('fetch failed'))) {
+          console.warn(`[ToothDB] Retrying ${method} ${collectionName} after network issue:`, err?.message);
           await sleep(400 * (attempt + 1));
           continue;
         }
-        throw new Error(`ToothDB server error (${res.status}): ${errText}`);
+        break;
       }
-
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        return await res.json();
-      }
-      return await res.text();
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (attempt < maxRetries && (err.name === 'AbortError' || err.message?.includes('fetch failed'))) {
-        console.warn(`[ToothDB] Retrying ${method} ${collectionName} after network issue:`, err?.message);
-        await sleep(400 * (attempt + 1));
-        continue;
-      }
-      throw err;
     }
   }
+
+  throw lastError || new Error(`Failed to connect to ToothDB at ${configuredUrl}`);
 }
 
 function normalizeArray(response: any): any[] {
@@ -128,24 +146,14 @@ export const ToothDbClient = {
 
   getUser: async (userId: string): Promise<any | null> => {
     if (!userId) return null;
-    try {
-      const res = await toothDbRequest('GET', 'users', { limit: 1000 });
-      const users = normalizeArray(res);
-      return users.find((u: any) => (u.id === userId || u._id === userId || u.docId === userId)) || null;
-    } catch (e: any) {
-      console.error('[ToothDB] getUser error:', e?.message || e);
-      return null;
-    }
+    const res = await toothDbRequest('GET', 'users', { limit: 1000 });
+    const users = normalizeArray(res);
+    return users.find((u: any) => (u.id === userId || u._id === userId || u.docId === userId)) || null;
   },
 
   getAllUsers: async (): Promise<any[]> => {
-    try {
-      const res = await toothDbRequest('GET', 'users', { limit: 1000 });
-      return normalizeArray(res);
-    } catch (e: any) {
-      console.error('[ToothDB] getAllUsers error:', e?.message || e);
-      return [];
-    }
+    const res = await toothDbRequest('GET', 'users', { limit: 1000 });
+    return normalizeArray(res);
   },
 
   updateUser: async (userId: string, updates: Partial<any>): Promise<void> => {
@@ -172,40 +180,25 @@ export const ToothDbClient = {
   },
 
   getProjectsByOwner: async (ownerId: string): Promise<Project[]> => {
-    try {
-      const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
-      const rawList = normalizeArray(res);
-      return rawList
-        .map(ToothDbClient.mapToProject)
-        .filter(p => p.ownerId === ownerId);
-    } catch (e: any) {
-      console.error('[ToothDB] getProjectsByOwner error:', e?.message || e);
-      return [];
-    }
+    const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
+    const rawList = normalizeArray(res);
+    return rawList
+      .map(ToothDbClient.mapToProject)
+      .filter(p => p.ownerId === ownerId);
   },
 
   getProjectByApiKey: async (apiKey: string): Promise<Project | null> => {
-    try {
-      const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
-      const rawList = normalizeArray(res);
-      const found = rawList.map(ToothDbClient.mapToProject).find(p => p.apiKey === apiKey);
-      return found || null;
-    } catch (e: any) {
-      console.error('[ToothDB] getProjectByApiKey error:', e?.message || e);
-      return null;
-    }
+    const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
+    const rawList = normalizeArray(res);
+    const found = rawList.map(ToothDbClient.mapToProject).find(p => p.apiKey === apiKey);
+    return found || null;
   },
 
   getProjectById: async (id: string): Promise<Project | null> => {
-    try {
-      const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
-      const rawList = normalizeArray(res);
-      const found = rawList.map(ToothDbClient.mapToProject).find(p => p.id === id);
-      return found || null;
-    } catch (e: any) {
-      console.error('[ToothDB] getProjectById error:', e?.message || e);
-      return null;
-    }
+    const res = await toothDbRequest('GET', 'projects', { limit: 1000 });
+    const rawList = normalizeArray(res);
+    const found = rawList.map(ToothDbClient.mapToProject).find(p => p.id === id);
+    return found || null;
   },
 
   createProject: async (payload: { name: string; ownerId: string; apiKey: string; secretKey: string }): Promise<Project> => {
@@ -245,69 +238,54 @@ export const ToothDbClient = {
   },
 
   getProjectCollections: async (projectId: string): Promise<Collection[]> => {
-    try {
-      const proj = await ToothDbClient.getProjectById(projectId);
-      const knownCollectionNames = new Set<string>(proj?.collectionList || ['users']);
+    const proj = await ToothDbClient.getProjectById(projectId);
+    const knownCollectionNames = new Set<string>(proj?.collectionList || ['users']);
 
-      const res = await toothDbRequest('GET', 'documents', { limit: 1000 });
-      const allDocs = normalizeArray(res);
-      const projectDocs = allDocs.filter((d: any) => d.projectId === projectId);
+    const res = await toothDbRequest('GET', 'documents', { limit: 1000 });
+    const allDocs = normalizeArray(res);
+    const projectDocs = allDocs.filter((d: any) => d.projectId === projectId);
 
-      const counts: Record<string, number> = {};
-      projectDocs.forEach((d: any) => {
-        if (d.collectionName) {
-          counts[d.collectionName] = (counts[d.collectionName] || 0) + 1;
-          knownCollectionNames.add(d.collectionName);
-        }
-      });
+    const counts: Record<string, number> = {};
+    projectDocs.forEach((d: any) => {
+      if (d.collectionName) {
+        counts[d.collectionName] = (counts[d.collectionName] || 0) + 1;
+        knownCollectionNames.add(d.collectionName);
+      }
+    });
 
-      const cols: Collection[] = Array.from(knownCollectionNames).map(cName => ({
-        name: cName,
-        entries: [],
-        totalCount: counts[cName] || 0,
-        hasLoaded: false
-      }));
+    const cols: Collection[] = Array.from(knownCollectionNames).map(cName => ({
+      name: cName,
+      entries: [],
+      totalCount: counts[cName] || 0,
+      hasLoaded: false
+    }));
 
-      return cols;
-    } catch (e: any) {
-      console.error('[ToothDB] getProjectCollections error:', e?.message || e);
-      return [{ name: 'users', entries: [], totalCount: 0, hasLoaded: false }];
-    }
+    return cols;
   },
 
   getCollectionPreview: async (projectId: string, collectionName: string): Promise<Partial<Collection>> => {
-    try {
-      const docs = await ToothDbClient.getDocuments(projectId, collectionName, 10);
-      return {
-        name: collectionName,
-        totalCount: docs.length,
-        entries: docs.slice(0, 5),
-        hasLoaded: true
-      };
-    } catch (e: any) {
-      console.error('[ToothDB] getCollectionPreview error:', e?.message || e);
-      return { name: collectionName, totalCount: 0, entries: [], hasLoaded: false };
-    }
+    const docs = await ToothDbClient.getDocuments(projectId, collectionName, 10);
+    return {
+      name: collectionName,
+      totalCount: docs.length,
+      entries: docs.slice(0, 5),
+      hasLoaded: true
+    };
   },
 
   getDocuments: async (projectId: string, collectionName: string, limit: number = 50): Promise<DBEntry[]> => {
-    try {
-      const res = await toothDbRequest('GET', 'documents', { limit: 1000 });
-      const allDocs = normalizeArray(res);
-      const filtered = allDocs
-        .filter((d: any) => d.projectId === projectId && d.collectionName === collectionName)
-        .map((d: any) => ({
-          id: d.docId || d.id || d._id,
-          ...d.data,
-          _createdAt: d.createdAt || d._createdAt,
-          _updatedAt: d.updatedAt || d._updatedAt
-        }));
+    const res = await toothDbRequest('GET', 'documents', { limit: 1000 });
+    const allDocs = normalizeArray(res);
+    const filtered = allDocs
+      .filter((d: any) => d.projectId === projectId && d.collectionName === collectionName)
+      .map((d: any) => ({
+        id: d.docId || d.id || d._id,
+        ...d.data,
+        _createdAt: d.createdAt || d._createdAt,
+        _updatedAt: d.updatedAt || d._updatedAt
+      }));
 
-      return filtered.slice(0, limit);
-    } catch (e: any) {
-      console.error('[ToothDB] getDocuments error:', e?.message || e);
-      return [];
-    }
+    return filtered.slice(0, limit);
   },
 
   addDocument: async (projectId: string, collectionName: string, docId: string, data: any): Promise<string> => {
@@ -344,13 +322,8 @@ export const ToothDbClient = {
   },
 
   getFeedback: async (): Promise<any[]> => {
-    try {
-      const res = await toothDbRequest('GET', 'feedback', { limit: 1000 });
-      return normalizeArray(res);
-    } catch (e: any) {
-      console.error('[ToothDB] getFeedback error:', e?.message || e);
-      return [];
-    }
+    const res = await toothDbRequest('GET', 'feedback', { limit: 1000 });
+    return normalizeArray(res);
   },
 
   addFeedback: async (feedback: { name: string; email: string; message: string }): Promise<void> => {
