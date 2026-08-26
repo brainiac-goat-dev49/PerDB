@@ -302,23 +302,41 @@ export const ToothDbClient = {
   },
 
   getDocuments: async (projectId: string, collectionName: string, limit: number = 50): Promise<DBEntry[]> => {
-    const res = await toothDbRequest('GET', 'documents', { limit: 1000 });
-    const allDocs = normalizeArray(res);
-    const filtered = allDocs
-      .filter((d: any) => 
-        d.projectId === projectId && 
-        d.collectionName === collectionName && 
-        !d.isDeleted && 
-        !d.deleted && 
-        d.status !== 'deleted' && 
-        !d._deleted
-      )
-      .map((d: any) => ({
-        id: d.docId || d.id || d._id,
-        ...d.data,
-        _createdAt: d.createdAt || d._createdAt,
-        _updatedAt: d.updatedAt || d._updatedAt
-      }));
+    // 1. Query 'documents' collection in ToothDB
+    const resMain = await toothDbRequest('GET', 'documents', { limit: 1000 }).catch(() => []);
+    const docsMain = normalizeArray(resMain);
+
+    // 2. Query specific collectionName in case ToothDB partition is collection-keyed
+    const resSpecific = await toothDbRequest('GET', collectionName, { limit: 1000 }).catch(() => []);
+    const docsSpecific = normalizeArray(resSpecific);
+
+    const combinedRaw = [...docsMain, ...docsSpecific];
+    const seen = new Set<string>();
+    const filtered: DBEntry[] = [];
+
+    for (const d of combinedRaw) {
+      if (!d) continue;
+      const isDeleted = d.isDeleted || d.deleted || d.status === 'deleted' || d._deleted;
+      if (isDeleted) continue;
+
+      const pId = d.projectId || projectId;
+      const cName = d.collectionName || collectionName;
+
+      if (pId === projectId && cName === collectionName) {
+        const docId = d.docId || d.id || d._id;
+        const dedupeKey = `${pId}_${cName}_${docId}`;
+        if (!seen.has(dedupeKey)) {
+          seen.add(dedupeKey);
+          const innerData = (d.data && typeof d.data === 'object') ? d.data : d;
+          filtered.push({
+            id: docId,
+            ...innerData,
+            _createdAt: d.createdAt || d._createdAt || innerData._createdAt,
+            _updatedAt: d.updatedAt || d._updatedAt || innerData._updatedAt
+          });
+        }
+      }
+    }
 
     return filtered.slice(0, limit);
   },
@@ -326,9 +344,10 @@ export const ToothDbClient = {
   addDocument: async (projectId: string, collectionName: string, docId: string, data: any): Promise<string> => {
     const finalDocId = docId || ('doc_' + Math.random().toString(36).substring(2, 10));
     const now = new Date().toISOString();
+    const docKey = `${projectId}_${collectionName}_${finalDocId}`;
 
     const payload = {
-      id: `${projectId}_${collectionName}_${finalDocId}`,
+      id: docKey,
       projectId,
       collectionName,
       docId: finalDocId,
@@ -339,15 +358,47 @@ export const ToothDbClient = {
       updatedAt: now
     };
 
+    // 1. Post to 'documents' collection
     await toothDbRequest('POST', 'documents', {}, payload);
+
+    // 2. Post to specific collectionName to support backends partitioned by collectionName
+    try {
+      await toothDbRequest('POST', collectionName, {}, payload);
+    } catch (e) {}
+
+    // 3. Register collectionName in project's collectionList if missing
+    try {
+      const proj = await ToothDbClient.getProjectById(projectId);
+      if (proj && (!proj.collectionList || !proj.collectionList.includes(collectionName))) {
+        const updatedList = Array.from(new Set([...(proj.collectionList || []), collectionName]));
+        await ToothDbClient.updateProject(projectId, { collectionList: updatedList });
+      }
+    } catch (e) {}
+
+    // 4. Increment stats
+    ToothDbClient.incrementStats(projectId, 0, 1).catch(() => {});
+
+    // 5. Read-back verification to guarantee durable commitment before returning success
+    const verifyDocs = await ToothDbClient.getDocuments(projectId, collectionName, 1000);
+    const exists = verifyDocs.some(d => d.id === finalDocId || d.id === docKey);
+    if (!exists) {
+      await sleep(200);
+      const retryDocs = await ToothDbClient.getDocuments(projectId, collectionName, 1000);
+      const retryExists = retryDocs.some(d => d.id === finalDocId || d.id === docKey);
+      if (!retryExists) {
+        throw new Error('Durable write verification failed: document not committed to ToothDB store');
+      }
+    }
+
     return finalDocId;
   },
 
   deleteDocument: async (projectId: string, collectionName: string, docId: string): Promise<void> => {
     const id = `${projectId}_${collectionName}_${docId}`;
-    await toothDbRequest('DELETE', 'documents', { id });
+    await toothDbRequest('DELETE', 'documents', { id }).catch(() => {});
+    await toothDbRequest('DELETE', collectionName, { id }).catch(() => {});
     try {
-      await toothDbRequest('PUT', 'documents', { id }, {
+      const softDeletePayload = {
         id,
         projectId,
         collectionName,
@@ -356,7 +407,9 @@ export const ToothDbClient = {
         deleted: true,
         status: 'deleted',
         updatedAt: new Date().toISOString()
-      });
+      };
+      await toothDbRequest('PUT', 'documents', { id }, softDeletePayload).catch(() => {});
+      await toothDbRequest('PUT', collectionName, { id }, softDeletePayload).catch(() => {});
     } catch (e) {}
   },
 

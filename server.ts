@@ -352,26 +352,46 @@ async function startServer() {
 
       const collectionName = (req.query.collection as string) || 'default';
       if (req.method === 'POST') {
-        const docId = Math.random().toString(36).substring(2, 12);
-        const newId = await ToothDbClient.addDocument(project.id, collectionName, docId, req.body);
-        return res.json({ success: true, id: newId });
+        try {
+          const docId = (req.body && req.body.id) || (req.query && (req.query.id as string)) || ('doc_' + Math.random().toString(36).substring(2, 10));
+          const newId = await ToothDbClient.addDocument(project.id, collectionName, docId, req.body);
+          return res.json({ success: true, id: newId });
+        } catch (writeErr: any) {
+          console.error('[PerDB Server] POST write error:', writeErr);
+          return res.status(500).json({ error: 'storage unavailable', details: writeErr?.message || 'Failed to durably commit write' });
+        }
       }
       if (req.method === 'GET') {
-        const limit = parseInt(req.query.limit as string) || 50;
-        const docs = await ToothDbClient.getDocuments(project.id, collectionName, limit);
-        return res.json(docs);
+        try {
+          const limit = parseInt(req.query.limit as string) || 50;
+          const docs = await ToothDbClient.getDocuments(project.id, collectionName, limit);
+          return res.json(docs);
+        } catch (readErr: any) {
+          console.error('[PerDB Server] GET read error:', readErr);
+          return res.status(500).json({ error: 'storage unavailable', details: readErr?.message || 'Failed to fetch documents' });
+        }
       }
       if (req.method === 'PUT') {
-        const docId = req.query.id as string || Math.random().toString(36).substring(2, 12);
-        await ToothDbClient.addDocument(project.id, collectionName, docId, req.body);
-        return res.json({ success: true, id: docId });
+        try {
+          const docId = (req.query.id as string) || (req.body && req.body.id) || ('doc_' + Math.random().toString(36).substring(2, 10));
+          const newId = await ToothDbClient.addDocument(project.id, collectionName, docId, req.body);
+          return res.json({ success: true, id: newId });
+        } catch (putErr: any) {
+          console.error('[PerDB Server] PUT write error:', putErr);
+          return res.status(500).json({ error: 'storage unavailable', details: putErr?.message || 'Failed to durably commit update' });
+        }
       }
       if (req.method === 'DELETE') {
-        const docId = req.query.id as string;
-        if (docId) {
-          await ToothDbClient.deleteDocument(project.id, collectionName, docId);
+        try {
+          const docId = req.query.id as string;
+          if (docId) {
+            await ToothDbClient.deleteDocument(project.id, collectionName, docId);
+          }
+          return res.json({ success: true });
+        } catch (delErr: any) {
+          console.error('[PerDB Server] DELETE error:', delErr);
+          return res.status(500).json({ error: 'storage unavailable', details: delErr?.message || 'Failed to delete document' });
         }
-        return res.json({ success: true });
       }
       return res.status(405).json({ error: 'Method Not Allowed' });
     } catch (e: any) {
