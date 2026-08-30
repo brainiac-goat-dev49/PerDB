@@ -261,32 +261,19 @@ export const ToothDbClient = {
   getProjectCollections: async (projectId: string): Promise<Collection[]> => {
     const proj = await ToothDbClient.getProjectById(projectId);
     if (!proj) return [];
-    const knownCollectionNames = new Set<string>(proj?.collectionList || ['users']);
+    const knownCollectionNames = Array.from(new Set<string>(proj.collectionList || []));
 
-    const res = await toothDbRequest('GET', 'documents', { limit: 1000 });
-    const allDocs = normalizeArray(res);
-    const projectDocs = allDocs.filter((d: any) => 
-      d.projectId === projectId && 
-      !d.isDeleted && 
-      !d.deleted && 
-      d.status !== 'deleted' && 
-      !d._deleted
+    const cols: Collection[] = await Promise.all(
+      knownCollectionNames.map(async (cName) => {
+        const docs = await ToothDbClient.getDocuments(projectId, cName, 1000).catch(() => []);
+        return {
+          name: cName,
+          entries: [],
+          totalCount: docs.length,
+          hasLoaded: false
+        };
+      })
     );
-
-    const counts: Record<string, number> = {};
-    projectDocs.forEach((d: any) => {
-      if (d.collectionName) {
-        counts[d.collectionName] = (counts[d.collectionName] || 0) + 1;
-        knownCollectionNames.add(d.collectionName);
-      }
-    });
-
-    const cols: Collection[] = Array.from(knownCollectionNames).map(cName => ({
-      name: cName,
-      entries: [],
-      totalCount: counts[cName] || 0,
-      hasLoaded: false
-    }));
 
     return cols;
   },
@@ -302,21 +289,20 @@ export const ToothDbClient = {
   },
 
   getDocuments: async (projectId: string, collectionName: string, limit: number = 50): Promise<DBEntry[]> => {
-    // 1. Fetch documents directly from ToothDB collection Name
-    const resSpecific = await toothDbRequest('GET', collectionName, { limit: 1000 }).catch(() => []);
-    const docsSpecific = normalizeArray(resSpecific);
+    const scopedCollection = `${projectId}_${collectionName}`;
 
-    // 2. Query ToothDB for prefixed collection name
-    const resPrefixed = collectionName.includes(projectId) 
-      ? [] 
-      : await toothDbRequest('GET', `${projectId}_${collectionName}`, { limit: 1000 }).catch(() => []);
-    const docsPrefixed = normalizeArray(resPrefixed);
+    // 1. Fetch documents directly from project-scoped ToothDB collection
+    const resScoped = await toothDbRequest('GET', scopedCollection, { limit: 1000 }).catch(() => []);
+    const docsScoped = normalizeArray(resScoped);
 
-    // 3. Query ToothDB 'documents' collection
-    const resMain = await toothDbRequest('GET', 'documents', { limit: 1000 }).catch(() => []);
-    const docsMain = normalizeArray(resMain);
+    // 2. Fetch documents from un-prefixed collection for backward compatibility if scoped is empty
+    let docsUnprefixed: any[] = [];
+    if (docsScoped.length === 0) {
+      const resUnprefixed = await toothDbRequest('GET', collectionName, { limit: 1000 }).catch(() => []);
+      docsUnprefixed = normalizeArray(resUnprefixed);
+    }
 
-    const combinedRaw = [...docsSpecific, ...docsPrefixed, ...docsMain];
+    const combinedRaw = [...docsScoped, ...docsUnprefixed];
     const seen = new Set<string>();
     const filtered: DBEntry[] = [];
 
@@ -328,7 +314,7 @@ export const ToothDbClient = {
       const pId = d.perdbProjectId || d.projectId;
       const cName = d.perdbCollectionName || d.collectionName || collectionName;
 
-      const isProjectMatch = !pId || pId === projectId || pId === 'prj_78xtm2lthd' || (d.docKey && d.docKey.startsWith(projectId));
+      const isProjectMatch = !pId || pId === projectId || (d.docKey && d.docKey.startsWith(projectId));
       const isCollectionMatch = cName === collectionName || (d.docKey && d.docKey.includes(`_${collectionName}_`));
 
       if (isProjectMatch && isCollectionMatch) {
@@ -366,6 +352,7 @@ export const ToothDbClient = {
     const finalDocId = docId || ('doc_' + Math.random().toString(36).substring(2, 10));
     const now = new Date().toISOString();
     const docKey = `${projectId}_${collectionName}_${finalDocId}`;
+    const scopedCollection = `${projectId}_${collectionName}`;
 
     const dataObj = (typeof data === 'object' && data !== null) ? data : { value: data };
 
@@ -383,22 +370,10 @@ export const ToothDbClient = {
       updatedAt: now
     };
 
-    // 1. Post directly to ToothDB under collectionName so it appears in ToothDB CRUD UI
-    await toothDbRequest('POST', collectionName, {}, payload);
+    // Post exclusively to project-scoped ToothDB collection
+    await toothDbRequest('POST', scopedCollection, {}, payload);
 
-    // 2. Post to prefixed collection name
-    try {
-      if (`${projectId}_${collectionName}` !== collectionName) {
-        await toothDbRequest('POST', `${projectId}_${collectionName}`, {}, payload);
-      }
-    } catch (e) {}
-
-    // 3. Post to 'documents' collection
-    try {
-      await toothDbRequest('POST', 'documents', {}, payload);
-    } catch (e) {}
-
-    // 4. Register collectionName in project's collectionList if missing
+    // Register collectionName in project's collectionList if missing
     try {
       const proj = await ToothDbClient.getProjectById(projectId);
       if (proj && (!proj.collectionList || !proj.collectionList.includes(collectionName))) {
@@ -407,10 +382,10 @@ export const ToothDbClient = {
       }
     } catch (e) {}
 
-    // 5. Increment stats
+    // Increment stats
     ToothDbClient.incrementStats(projectId, 0, 1).catch(() => {});
 
-    // 6. Read-back verification to guarantee durable commitment
+    // Read-back verification to guarantee durable commitment
     const verifyDocs = await ToothDbClient.getDocuments(projectId, collectionName, 1000);
     const exists = verifyDocs.some(d => d.id === finalDocId || (d as any).docId === finalDocId || (d as any).docKey === docKey);
     if (!exists) {
@@ -426,12 +401,12 @@ export const ToothDbClient = {
   },
 
   deleteDocument: async (projectId: string, collectionName: string, docId: string): Promise<void> => {
-    const id = `${projectId}_${collectionName}_${docId}`;
-    await toothDbRequest('DELETE', 'documents', { id }).catch(() => {});
-    await toothDbRequest('DELETE', collectionName, { id }).catch(() => {});
+    const scopedCollection = `${projectId}_${collectionName}`;
+    await toothDbRequest('DELETE', scopedCollection, { id: docId }).catch(() => {});
+    await toothDbRequest('DELETE', collectionName, { id: docId }).catch(() => {});
     try {
       const softDeletePayload = {
-        id,
+        id: docId,
         projectId,
         collectionName,
         docId,
@@ -440,8 +415,8 @@ export const ToothDbClient = {
         status: 'deleted',
         updatedAt: new Date().toISOString()
       };
-      await toothDbRequest('PUT', 'documents', { id }, softDeletePayload).catch(() => {});
-      await toothDbRequest('PUT', collectionName, { id }, softDeletePayload).catch(() => {});
+      await toothDbRequest('PUT', scopedCollection, { id: docId }, softDeletePayload).catch(() => {});
+      await toothDbRequest('PUT', collectionName, { id: docId }, softDeletePayload).catch(() => {});
     } catch (e) {}
   },
 
