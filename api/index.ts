@@ -6,7 +6,9 @@ import { ToothDbClient } from '../lib/toothdb.js';
 const app = express();
 
 app.use(cors({ origin: true }));
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+app.use(bodyParser.text({ type: '*/*', limit: '50mb' }));
 
 async function getAuthenticatedUser(req: any) {
   const authHeader = req.headers.authorization;
@@ -334,20 +336,36 @@ router.delete("/admin/feedback/:id", async (req, res) => {
 });
 
 // Runtime API (POST, GET, PUT, DELETE)
-router.all(['/', ''], async (req, res) => {
+async function handleRuntimeApi(req: any, res: any) {
   try {
-    const apiKey = (req.headers['x-api-key'] || req.query.key) as string;
+    let bodyData = req.body;
+    if (typeof bodyData === 'string') {
+      try {
+        bodyData = JSON.parse(bodyData);
+      } catch (e) {}
+    }
+
+    const apiKey = (
+      req.headers['x-api-key'] ||
+      req.query.key ||
+      req.query.apiKey ||
+      req.query.api_key ||
+      (bodyData && (bodyData.key || bodyData.apiKey || bodyData.api_key))
+    ) as string;
+
     if (!apiKey) {
       return res.status(200).json({ status: 'online', message: 'PerDB API is active.' });
     }
+
     const project = await ToothDbClient.getProjectByApiKey(apiKey);
     if (!project) return res.status(403).json({ error: 'Invalid API Key' });
 
-    const collectionName = (req.query.collection as string) || 'default';
+    const collectionName = (req.query.collection as string) || (bodyData && bodyData.collection) || 'default';
+
     if (req.method === 'POST') {
       try {
-        const docId = (req.body && req.body.id) || (req.query && (req.query.id as string)) || ('doc_' + Math.random().toString(36).substring(2, 10));
-        const newId = await ToothDbClient.addDocument(project.id, collectionName, docId, req.body);
+        const docId = (bodyData && bodyData.id) || (req.query && (req.query.id as string)) || ('doc_' + Math.random().toString(36).substring(2, 10));
+        const newId = await ToothDbClient.addDocument(project.id, collectionName, docId, bodyData);
         return res.json({ success: true, id: newId });
       } catch (writeErr: any) {
         console.error('[PerDB API] POST write error:', writeErr);
@@ -366,8 +384,8 @@ router.all(['/', ''], async (req, res) => {
     }
     if (req.method === 'PUT') {
       try {
-        const docId = (req.query.id as string) || (req.body && req.body.id) || ('doc_' + Math.random().toString(36).substring(2, 10));
-        const newId = await ToothDbClient.addDocument(project.id, collectionName, docId, req.body);
+        const docId = (req.query.id as string) || (bodyData && bodyData.id) || ('doc_' + Math.random().toString(36).substring(2, 10));
+        const newId = await ToothDbClient.addDocument(project.id, collectionName, docId, bodyData);
         return res.json({ success: true, id: newId });
       } catch (putErr: any) {
         console.error('[PerDB API] PUT write error:', putErr);
@@ -376,7 +394,7 @@ router.all(['/', ''], async (req, res) => {
     }
     if (req.method === 'DELETE') {
       try {
-        const docId = req.query.id as string;
+        const docId = (req.query.id as string) || (bodyData && bodyData.id);
         if (docId) {
           await ToothDbClient.deleteDocument(project.id, collectionName, docId);
         }
@@ -390,7 +408,9 @@ router.all(['/', ''], async (req, res) => {
   } catch (e: any) {
     res.status(500).json({ error: e.message || 'Internal Server Error' });
   }
-});
+}
+
+router.all(['/', ''], handleRuntimeApi);
 
 // Mount router on both '/api' and '/' for universal Vercel and standalone compatibility
 app.use('/api', router);

@@ -33,6 +33,7 @@ export interface Project {
   };
   collections: Collection[];
   collectionList: string[];
+  collections_data?: Record<string, any[]>;
   createdAt: string;
   updatedAt: string;
 }
